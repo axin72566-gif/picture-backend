@@ -1,6 +1,7 @@
 package com.example.picturebackend.user.service.impl;
 
 import com.example.picturebackend.common.ErrorCode;
+import com.example.picturebackend.config.CosProperties;
 import com.example.picturebackend.constant.UserConstant;
 import com.example.picturebackend.exception.BusinessException;
 import com.example.picturebackend.user.entity.User;
@@ -11,6 +12,7 @@ import com.example.picturebackend.user.model.vo.LoginUserVO;
 import com.example.picturebackend.user.model.vo.UserVO;
 import com.example.picturebackend.utils.JwtUtils;
 import com.example.picturebackend.utils.PasswordUtils;
+import com.qcloud.cos.COSClient;
 import jakarta.servlet.http.HttpServletRequest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -57,6 +59,12 @@ class UserServiceImplTest {
     @Mock
     private HttpServletRequest request;
 
+    @Mock
+    private COSClient cosClient;
+
+    @Mock
+    private CosProperties cosProperties;
+
     private UserServiceImpl userService;
 
     @BeforeEach
@@ -64,7 +72,7 @@ class UserServiceImplTest {
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
         when(jwtUtils.getExpireMillis()).thenReturn(86_400_000L);
 
-        userService = new UserServiceImpl(userMapper, jwtUtils, redisTemplate);
+        userService = new UserServiceImpl(userMapper, jwtUtils, redisTemplate, cosClient, cosProperties);
     }
 
     @Test

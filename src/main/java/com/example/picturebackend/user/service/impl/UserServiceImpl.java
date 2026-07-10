@@ -3,6 +3,7 @@ package com.example.picturebackend.user.service.impl;
 import com.baomidou.mybatisplus.core.toolkit.StringUtils;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.example.picturebackend.common.ErrorCode;
+import com.example.picturebackend.config.CosProperties;
 import com.example.picturebackend.constant.UserConstant;
 import com.example.picturebackend.exception.BusinessException;
 import com.example.picturebackend.user.entity.User;
@@ -10,17 +11,24 @@ import com.example.picturebackend.user.mapper.UserMapper;
 import com.example.picturebackend.user.model.converter.UserConverter;
 import com.example.picturebackend.user.model.dto.UserLoginRequest;
 import com.example.picturebackend.user.model.dto.UserRegisterRequest;
+import com.example.picturebackend.user.model.dto.UserUpdateRequest;
 import com.example.picturebackend.user.model.vo.LoginUserVO;
 import com.example.picturebackend.user.model.vo.UserVO;
 import com.example.picturebackend.user.service.UserService;
 import com.example.picturebackend.utils.JwtUtils;
 import com.example.picturebackend.utils.PasswordUtils;
+import com.qcloud.cos.COSClient;
+import com.qcloud.cos.model.ObjectMetadata;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.time.Duration;
+import java.time.LocalDate;
+import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 
 @Slf4j
@@ -29,16 +37,30 @@ public class UserServiceImpl implements UserService {
 
     private static final String ACCOUNT_PATTERN = "^[a-zA-Z0-9_]+$";
 
+    private static final List<String> ALLOWED_CONTENT_TYPES = List.of(
+            "image/jpeg", "image/png", "image/gif", "image/webp"
+    );
+
+    private static final long MAX_FILE_SIZE = 10 * 1024 * 1024L;
+
     private final UserMapper userMapper;
 
     private final JwtUtils jwtUtils;
 
     private final StringRedisTemplate redisTemplate;
 
-    public UserServiceImpl(UserMapper userMapper, JwtUtils jwtUtils, StringRedisTemplate redisTemplate) {
+    private final COSClient cosClient;
+
+    private final CosProperties cosProperties;
+
+    public UserServiceImpl(UserMapper userMapper, JwtUtils jwtUtils,
+                           StringRedisTemplate redisTemplate,
+                           COSClient cosClient, CosProperties cosProperties) {
         this.userMapper = userMapper;
         this.jwtUtils = jwtUtils;
         this.redisTemplate = redisTemplate;
+        this.cosClient = cosClient;
+        this.cosProperties = cosProperties;
     }
 
     @Override
@@ -149,6 +171,107 @@ public class UserServiceImpl implements UserService {
     @Override
     public User getById(Long id) {
         return userMapper.selectById(id);
+    }
+
+    @Override
+    public UserVO updateUser(UserUpdateRequest request, Long userId) {
+        if (StringUtils.isBlank(request.getUserName()) && StringUtils.isBlank(request.getUserProfile())) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "请至少提供一个需要修改的字段");
+        }
+
+        User user = userMapper.selectById(userId);
+        if (user == null) {
+            throw new BusinessException(ErrorCode.USER_NOT_FOUND);
+        }
+
+        String userName = request.getUserName();
+        if (userName != null) {
+            if (userName.isBlank() || userName.length() > 32) {
+                throw new BusinessException(ErrorCode.PARAMS_ERROR, "用户昵称长度不能超过 32 个字符");
+            }
+            user.setUserName(userName);
+        }
+
+        String userProfile = request.getUserProfile();
+        if (userProfile != null) {
+            if (userProfile.length() > 255) {
+                throw new BusinessException(ErrorCode.PARAMS_ERROR, "个人简介长度不能超过 255 个字符");
+            }
+            user.setUserProfile(userProfile);
+        }
+
+        userMapper.updateById(user);
+        return UserConverter.toVO(user);
+    }
+
+    @Override
+    public String uploadAvatar(MultipartFile file, Long userId) {
+        if (file == null || file.isEmpty()) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "文件不能为空");
+        }
+
+        String contentType = file.getContentType();
+        if (contentType == null || !ALLOWED_CONTENT_TYPES.contains(contentType)) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "文件类型不支持，仅支持 jpg/png/gif/webp");
+        }
+
+        long size = file.getSize();
+        if (size > MAX_FILE_SIZE) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "文件大小不能超过 10MB");
+        }
+
+        String originalName = file.getOriginalFilename();
+        String ext = "";
+        if (originalName != null) {
+            int dot = originalName.lastIndexOf('.');
+            if (dot > 0) {
+                ext = originalName.substring(dot);
+            }
+        }
+
+        String key = generateAvatarKey(ext);
+        String bucket = cosProperties.getBucket();
+
+        try {
+            ObjectMetadata metadata = new ObjectMetadata();
+            metadata.setContentLength(size);
+            metadata.setContentType(contentType);
+            cosClient.putObject(bucket, key, file.getInputStream(), metadata);
+        } catch (Exception e) {
+            log.error("头像上传 COS 失败, bucket={}, key={}", bucket, key, e);
+            throw new BusinessException(ErrorCode.SERVER_ERROR, "头像上传失败，请稍后重试");
+        }
+
+        String url = cosProperties.getBaseUrl() + "/" + key;
+
+        User user = userMapper.selectById(userId);
+        if (user == null) {
+            throw new BusinessException(ErrorCode.USER_NOT_FOUND);
+        }
+
+        String oldAvatar = user.getUserAvatar();
+        user.setUserAvatar(url);
+        userMapper.updateById(user);
+
+        if (oldAvatar != null && oldAvatar.startsWith(cosProperties.getBaseUrl())) {
+            try {
+                String oldKey = oldAvatar.substring(cosProperties.getBaseUrl().length() + 1);
+                cosClient.deleteObject(bucket, oldKey);
+            } catch (Exception e) {
+                log.warn("删除旧头像 COS 文件失败, key={}", oldAvatar, e);
+            }
+        }
+
+        log.info("用户头像更新成功 userId={}, url={}", userId, url);
+        return url;
+    }
+
+    private String generateAvatarKey(String ext) {
+        LocalDate today = LocalDate.now();
+        return String.format("avatar/%d/%02d/%02d/%s%s",
+                today.getYear(), today.getMonthValue(), today.getDayOfMonth(),
+                UUID.randomUUID().toString().replace("-", ""),
+                ext);
     }
 
     private String randomSuffix() {
