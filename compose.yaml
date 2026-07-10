@@ -1,0 +1,17 @@
+services:
+  mysql:
+    image: 'mysql:8.0'
+    container_name: 'my-dev-mysql'
+    environment:
+      - 'MYSQL_DATABASE=mydb'
+      - 'MYSQL_ROOT_PASSWORD=123456'
+    ports:
+      - '3306:3306'
+    restart: always
+
+  redis:
+    image: 'redis:7.2'
+    container_name: 'my-dev-redis'
+    ports:
+      - '6379:6379'
+    restart: always

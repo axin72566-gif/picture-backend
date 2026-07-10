@@ -1,0 +1,34 @@
+spring:
+  application:
+    name: picture-backend
+
+  datasource:
+    url: jdbc:mysql://localhost:3306/mydb?useSSL=false&serverTimezone=UTC&characterEncoding=utf8
+    username: root
+    password: 123456
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      password:
+      timeout: 3000ms
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: false
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+  global-config:
+    db-config:
+      logic-delete-field: isDelete
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+      id-type: AUTO
+  mapper-locations: classpath*:/mapper/**/*.xml
+
+jwt:
+  secret: picture-backend-secret-key-please-change-in-production-environment-32bytes
+  expire: 86400000 # 24h, 单位毫秒
+  header: Authorization
+  prefix: "Bearer "
