@@ -1,11 +1,18 @@
 package com.example.picturebackend.picture.service.impl;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.core.toolkit.StringUtils;
+import com.baomidou.mybatisplus.core.toolkit.support.SFunction;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.example.picturebackend.common.ErrorCode;
 import com.example.picturebackend.config.CosProperties;
 import com.example.picturebackend.exception.BusinessException;
 import com.example.picturebackend.picture.entity.Picture;
 import com.example.picturebackend.picture.mapper.PictureMapper;
 import com.example.picturebackend.picture.model.converter.PictureConverter;
+import com.example.picturebackend.picture.model.dto.PictureQueryRequest;
+import com.example.picturebackend.picture.model.dto.PictureUpdateRequest;
 import com.example.picturebackend.picture.model.vo.PictureVO;
 import com.example.picturebackend.picture.service.PictureService;
 import com.qcloud.cos.COSClient;
@@ -19,6 +26,7 @@ import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Slf4j
@@ -30,6 +38,12 @@ public class PictureServiceImpl implements PictureService {
     );
 
     private static final long MAX_FILE_SIZE = 10 * 1024 * 1024L;
+
+    private static final Map<String, SFunction<Picture, ?>> SORT_FIELD_MAP = Map.of(
+            "name", Picture::getName,
+            "size", Picture::getSize,
+            "createTime", Picture::getCreateTime
+    );
 
     private final PictureMapper pictureMapper;
 
@@ -106,6 +120,101 @@ public class PictureServiceImpl implements PictureService {
 
         log.info("图片上传成功 id={}, url={}, userId={}", picture.getId(), url, userId);
         return PictureConverter.toVO(picture);
+    }
+
+    @Override
+    public IPage<PictureVO> pagePictures(PictureQueryRequest request) {
+        return page(request, null);
+    }
+
+    @Override
+    public IPage<PictureVO> pageMyPictures(PictureQueryRequest request, Long userId) {
+        return page(request, userId);
+    }
+
+    private IPage<PictureVO> page(PictureQueryRequest request, Long userId) {
+        Page<Picture> page = new Page<>(request.getCurrent(), request.getPageSize());
+
+        LambdaQueryWrapper<Picture> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(Picture::getIsDelete, 0);
+        if (StringUtils.isNotBlank(request.getName())) {
+            wrapper.like(Picture::getName, request.getName());
+        }
+        if (request.getMinSize() != null) {
+            wrapper.ge(Picture::getSize, request.getMinSize());
+        }
+        if (request.getMaxSize() != null) {
+            wrapper.le(Picture::getSize, request.getMaxSize());
+        }
+        if (userId != null) {
+            wrapper.eq(Picture::getUserId, userId);
+        }
+
+        if (StringUtils.isNotBlank(request.getSortField())) {
+            SFunction<Picture, ?> column = SORT_FIELD_MAP.get(request.getSortField());
+            if (column != null) {
+                boolean asc = "asc".equalsIgnoreCase(request.getSortOrder());
+                wrapper.orderBy(true, asc, column);
+            }
+        } else {
+            wrapper.orderByDesc(Picture::getCreateTime);
+        }
+
+        Page<Picture> result = pictureMapper.selectPage(page, wrapper);
+        return result.convert(PictureConverter::toVO);
+    }
+
+    @Override
+    public PictureVO updatePicture(PictureUpdateRequest request, Long userId) {
+        Long id = request.getId();
+        if (id == null) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "图片 ID 不能为空");
+        }
+        if (StringUtils.isBlank(request.getName())) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "图片名称不能为空");
+        }
+
+        Picture picture = pictureMapper.selectById(id);
+        if (picture == null || picture.getIsDelete() == 1) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "图片不存在");
+        }
+        if (!picture.getUserId().equals(userId)) {
+            throw new BusinessException(ErrorCode.NO_AUTH, "只能编辑自己的图片");
+        }
+
+        picture.setName(request.getName());
+        pictureMapper.updateById(picture);
+        return PictureConverter.toVO(picture);
+    }
+
+    @Override
+    public void deletePicture(Long id, Long userId) {
+        Picture picture = pictureMapper.selectById(id);
+        if (picture == null || picture.getIsDelete() == 1) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "图片不存在");
+        }
+        if (!picture.getUserId().equals(userId)) {
+            throw new BusinessException(ErrorCode.NO_AUTH, "只能删除自己的图片");
+        }
+
+        String bucket = cosProperties.getBucket();
+        String key = extractKey(picture.getUrl());
+        try {
+            cosClient.deleteObject(bucket, key);
+        } catch (Exception e) {
+            log.error("删除 COS 文件失败, bucket={}, key={}", bucket, key, e);
+        }
+
+        pictureMapper.deleteById(id);
+        log.info("图片删除成功 id={}", id);
+    }
+
+    private String extractKey(String url) {
+        String baseUrl = cosProperties.getBaseUrl();
+        if (url != null && url.startsWith(baseUrl)) {
+            return url.substring(baseUrl.length() + 1);
+        }
+        return url;
     }
 
     private String generateKey(String ext) {
