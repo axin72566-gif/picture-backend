@@ -2,6 +2,9 @@ spring:
   application:
     name: picture-backend
 
+  profiles:
+    active: local
+
   datasource:
     url: jdbc:mysql://localhost:3306/mydb?useSSL=false&serverTimezone=UTC&characterEncoding=utf8
     username: root
@@ -14,6 +17,11 @@ spring:
       port: 6379
       password:
       timeout: 3000ms
+
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 10MB
 
 mybatis-plus:
   configuration:
@@ -32,3 +40,10 @@ jwt:
   expire: 86400000 # 24h, 单位毫秒
   header: Authorization
   prefix: "Bearer "
+
+cos:
+  secret-id: ${COS_SECRET_ID:}
+  secret-key: ${COS_SECRET_KEY:}
+  region: ${COS_REGION:}
+  bucket: ${COS_BUCKET:}
+  base-url: ${COS_BASE_URL:}
