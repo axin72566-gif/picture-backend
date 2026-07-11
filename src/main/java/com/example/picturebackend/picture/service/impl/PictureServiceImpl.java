@@ -15,6 +15,10 @@ import com.example.picturebackend.picture.model.dto.PictureQueryRequest;
 import com.example.picturebackend.picture.model.dto.PictureUpdateRequest;
 import com.example.picturebackend.picture.model.vo.PictureVO;
 import com.example.picturebackend.picture.service.PictureService;
+import com.example.picturebackend.user.entity.User;
+import com.example.picturebackend.user.mapper.UserMapper;
+import com.example.picturebackend.user.model.converter.UserConverter;
+import com.example.picturebackend.user.model.vo.UserVO;
 import com.qcloud.cos.COSClient;
 import com.qcloud.cos.model.ObjectMetadata;
 import lombok.extern.slf4j.Slf4j;
@@ -25,9 +29,8 @@ import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.time.LocalDate;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -47,12 +50,15 @@ public class PictureServiceImpl implements PictureService {
 
     private final PictureMapper pictureMapper;
 
+    private final UserMapper userMapper;
+
     private final COSClient cosClient;
 
     private final CosProperties cosProperties;
 
-    public PictureServiceImpl(PictureMapper pictureMapper, COSClient cosClient, CosProperties cosProperties) {
+    public PictureServiceImpl(PictureMapper pictureMapper, UserMapper userMapper, COSClient cosClient, CosProperties cosProperties) {
         this.pictureMapper = pictureMapper;
+        this.userMapper = userMapper;
         this.cosClient = cosClient;
         this.cosProperties = cosProperties;
     }
@@ -119,7 +125,10 @@ public class PictureServiceImpl implements PictureService {
         pictureMapper.insert(picture);
 
         log.info("图片上传成功 id={}, url={}, userId={}", picture.getId(), url, userId);
-        return PictureConverter.toVO(picture);
+        PictureVO vo = PictureConverter.toVO(picture);
+        User user = userMapper.selectById(userId);
+        vo.setUser(UserConverter.toVO(user));
+        return vo;
     }
 
     @Override
@@ -161,7 +170,24 @@ public class PictureServiceImpl implements PictureService {
         }
 
         Page<Picture> result = pictureMapper.selectPage(page, wrapper);
-        return result.convert(PictureConverter::toVO);
+        IPage<PictureVO> voPage = result.convert(PictureConverter::toVO);
+
+        List<PictureVO> records = voPage.getRecords();
+        if (org.springframework.util.CollectionUtils.isEmpty(records)) {
+            return voPage;
+        }
+
+        Set<Long> userIds = records.stream()
+                .map(PictureVO::getUserId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        if (!userIds.isEmpty()) {
+            Map<Long, UserVO> userVOMap = userMapper.selectBatchIds(userIds).stream()
+                    .collect(Collectors.toMap(User::getId, UserConverter::toVO));
+            records.forEach(vo -> vo.setUser(userVOMap.get(vo.getUserId())));
+        }
+
+        return voPage;
     }
 
     @Override
@@ -184,7 +210,10 @@ public class PictureServiceImpl implements PictureService {
 
         picture.setName(request.getName());
         pictureMapper.updateById(picture);
-        return PictureConverter.toVO(picture);
+        PictureVO vo = PictureConverter.toVO(picture);
+        User user = userMapper.selectById(userId);
+        vo.setUser(UserConverter.toVO(user));
+        return vo;
     }
 
     @Override

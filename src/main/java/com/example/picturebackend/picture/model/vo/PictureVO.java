@@ -1,5 +1,6 @@
 package com.example.picturebackend.picture.model.vo;
 
+import com.example.picturebackend.user.model.vo.UserVO;
 import lombok.Data;
 
 import java.io.Serializable;
@@ -27,6 +28,8 @@ public class PictureVO implements Serializable {
     private String format;
 
     private Long userId;
+
+    private UserVO user;
 
     private LocalDateTime createTime;
 }
