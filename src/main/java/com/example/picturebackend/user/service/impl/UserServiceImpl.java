@@ -174,6 +174,15 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
+    public UserVO getUserVO(Long id) {
+        User user = getById(id);
+        if (user == null) {
+            throw new BusinessException(ErrorCode.USER_NOT_FOUND);
+        }
+        return UserConverter.toVO(user);
+    }
+
+    @Override
     public UserVO updateUser(UserUpdateRequest request, Long userId) {
         if (StringUtils.isBlank(request.getUserName()) && StringUtils.isBlank(request.getUserProfile())) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR, "请至少提供一个需要修改的字段");

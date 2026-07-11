@@ -21,6 +21,8 @@ public interface UserService {
 
     User getById(Long id);
 
+    UserVO getUserVO(Long id);
+
     UserVO updateUser(UserUpdateRequest updateRequest, Long userId);
 
     String uploadAvatar(MultipartFile file, Long userId);

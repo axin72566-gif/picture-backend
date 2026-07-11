@@ -22,6 +22,8 @@ public class WebMvcConfig implements WebMvcConfigurer {
                 .excludePathPatterns(
                         "/api/user/register",
                         "/api/user/login",
+                        // 仅放行「数字 id」的公开资料，不能用 /api/user/*（会误伤 /current、/logout、/update 等）
+                        "/api/user/{id:\\d+}",
                         "/api/picture/page"
                 );
     }

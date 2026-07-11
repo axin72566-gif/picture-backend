@@ -1,8 +1,10 @@
 package com.example.picturebackend.user.controller;
 
 import com.example.picturebackend.common.BaseResponse;
+import com.example.picturebackend.common.ErrorCode;
 import com.example.picturebackend.common.ResultUtils;
 import com.example.picturebackend.constant.UserConstant;
+import com.example.picturebackend.exception.BusinessException;
 import com.example.picturebackend.user.model.dto.UserLoginRequest;
 import com.example.picturebackend.user.model.dto.UserRegisterRequest;
 import com.example.picturebackend.user.model.dto.UserUpdateRequest;
@@ -11,6 +13,7 @@ import com.example.picturebackend.user.model.vo.UserVO;
 import com.example.picturebackend.user.service.UserService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -53,10 +56,19 @@ public class UserController {
         return ResultUtils.success(vo);
     }
 
+    @GetMapping("/{id}")
+    public BaseResponse<UserVO> getUserById(@PathVariable Long id) {
+        UserVO vo = userService.getUserVO(id);
+        return ResultUtils.success(vo);
+    }
+
     @PutMapping("/update")
     public BaseResponse<UserVO> updateUser(@RequestBody UserUpdateRequest request,
                                            HttpServletRequest httpRequest) {
         Long userId = (Long) httpRequest.getAttribute(UserConstant.CURRENT_USER_ID_ATTR);
+        if (userId == null) {
+            throw new BusinessException(ErrorCode.NOT_LOGIN);
+        }
         UserVO vo = userService.updateUser(request, userId);
         return ResultUtils.success(vo);
     }
@@ -65,6 +77,9 @@ public class UserController {
     public BaseResponse<String> uploadAvatar(@RequestParam("file") MultipartFile file,
                                              HttpServletRequest httpRequest) {
         Long userId = (Long) httpRequest.getAttribute(UserConstant.CURRENT_USER_ID_ATTR);
+        if (userId == null) {
+            throw new BusinessException(ErrorCode.NOT_LOGIN);
+        }
         String url = userService.uploadAvatar(file, userId);
         return ResultUtils.success(url);
     }
