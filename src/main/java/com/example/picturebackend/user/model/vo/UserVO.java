@@ -25,4 +25,8 @@ public class UserVO implements Serializable {
     private LocalDateTime createTime;
 
     private LocalDateTime updateTime;
+
+    private Long followerCount;
+
+    private Long followingCount;
 }
