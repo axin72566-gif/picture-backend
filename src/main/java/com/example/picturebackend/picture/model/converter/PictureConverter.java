@@ -21,6 +21,7 @@ public final class PictureConverter {
         vo.setHeight(picture.getHeight());
         vo.setContentType(picture.getContentType());
         vo.setFormat(picture.getFormat());
+        vo.setDescription(picture.getDescription());
         vo.setUserId(picture.getUserId());
         vo.setCreateTime(picture.getCreateTime());
         return vo;

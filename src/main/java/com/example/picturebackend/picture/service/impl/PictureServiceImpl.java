@@ -149,6 +149,9 @@ public class PictureServiceImpl implements PictureService {
         if (StringUtils.isNotBlank(request.getName())) {
             wrapper.like(Picture::getName, request.getName());
         }
+        if (StringUtils.isNotBlank(request.getDescription())) {
+            wrapper.like(Picture::getDescription, request.getDescription());
+        }
         if (request.getMinSize() != null) {
             wrapper.ge(Picture::getSize, request.getMinSize());
         }
@@ -196,8 +199,8 @@ public class PictureServiceImpl implements PictureService {
         if (id == null) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR, "图片 ID 不能为空");
         }
-        if (StringUtils.isBlank(request.getName())) {
-            throw new BusinessException(ErrorCode.PARAMS_ERROR, "图片名称不能为空");
+        if (StringUtils.isBlank(request.getName()) && StringUtils.isBlank(request.getDescription())) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "图片名称和简介不能同时为空");
         }
 
         Picture picture = pictureMapper.selectById(id);
@@ -208,7 +211,12 @@ public class PictureServiceImpl implements PictureService {
             throw new BusinessException(ErrorCode.NO_AUTH, "只能编辑自己的图片");
         }
 
-        picture.setName(request.getName());
+        if (StringUtils.isNotBlank(request.getName())) {
+            picture.setName(request.getName());
+        }
+        if (StringUtils.isNotBlank(request.getDescription())) {
+            picture.setDescription(request.getDescription());
+        }
         pictureMapper.updateById(picture);
         PictureVO vo = PictureConverter.toVO(picture);
         User user = userMapper.selectById(userId);

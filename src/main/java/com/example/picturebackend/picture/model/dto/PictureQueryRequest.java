@@ -10,6 +10,8 @@ public class PictureQueryRequest extends PageRequest {
 
     private String name;
 
+    private String description;
+
     private Long minSize;
 
     private Long maxSize;

@@ -22,3 +22,6 @@ CREATE TABLE `picture` (
 ) ENGINE = InnoDB
   DEFAULT CHARSET = utf8mb4
   COLLATE = utf8mb4_unicode_ci COMMENT ='图片表';
+
+ALTER TABLE `picture`
+    ADD COLUMN `description` VARCHAR(512) DEFAULT NULL COMMENT '图片简介' AFTER `height`;

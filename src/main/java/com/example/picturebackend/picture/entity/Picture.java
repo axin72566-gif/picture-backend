@@ -34,6 +34,8 @@ public class Picture implements Serializable {
 
     private String format;
 
+    private String description;
+
     private Long userId;
 
     @TableField(fill = FieldFill.INSERT)

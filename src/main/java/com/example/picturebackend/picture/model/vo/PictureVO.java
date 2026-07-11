@@ -27,6 +27,8 @@ public class PictureVO implements Serializable {
 
     private String format;
 
+    private String description;
+
     private Long userId;
 
     private UserVO user;

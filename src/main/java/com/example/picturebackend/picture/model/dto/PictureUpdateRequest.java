@@ -12,4 +12,6 @@ public class PictureUpdateRequest implements Serializable {
     private Long id;
 
     private String name;
+
+    private String description;
 }
