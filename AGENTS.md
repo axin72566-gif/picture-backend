@@ -40,11 +40,13 @@ Public endpoints (no auth required): `GET /api/user/{id}/followers`, `GET /api/u
 Auth-required: `POST /api/user/follow/{followedId}`, `DELETE /api/user/follow/{followedId}`.
 
 ## Notification
-`notification` table stores in-app notifications (camelCase columns: `id`, `receiverId`, `senderId`, `type`, `pictureId`, `commentId`, `content`, `isRead`, `createTime`, `isDelete`). See `sql/notification.sql`.
+`notification` table stores in-app notifications (camelCase columns: `id`, `receiverId`, `senderId`, `type`, `pictureId`, `commentId`, `spaceId`, `content`, `isRead`, `createTime`, `isDelete`). See `sql/notification.sql`.
 
-Types: `FOLLOW`（有人关注我）、`COMMENT`（有人评论我的图片）、`REPLY`（有人回复我的评论）、`LIKE`（有人点赞我的图片）。  
+Types: `FOLLOW`（有人关注我）、`COMMENT`（有人评论我的图片）、`REPLY`（有人回复我的评论）、`LIKE`（有人点赞我的图片）、`SPACE_INVITE`（有人邀请我加入空间）。  
 写入规则：不通知自己；回复时若图片作者与父评论作者为同一人，只写一条且优先 `REPLY`。  
-关注成功、发表评论、点赞成功后与业务同事务写入；取消关注 / 删除评论 / 取消点赞不删除历史通知。
+关注成功、发表评论、点赞成功、发起空间邀请后与业务同事务写入；取消关注 / 删除评论 / 取消点赞 / 取消或拒绝邀请不删除历史通知。
+
+`notification` 表含可空 `spaceId`（空间邀请深链）；见 `sql/notification.sql`、`sql/notification_space_id.sql`。
 
 Auth-required: `GET /api/notification/page`, `GET /api/notification/unread/count`, `PUT /api/notification/{id}/read`, `PUT /api/notification/read/all`.  
 Public: `GET /api/picture/{id}`（通知评论/点赞深链打开图片详情）。  
@@ -59,4 +61,18 @@ Public endpoints (no auth required): `GET /api/picture/{id}/likes`.
 `like/status` 与公共图库 `GET /api/picture/page`、`GET /api/picture/{id}` 走 `OptionalAuthInterceptor`：有合法 token 时识别当前用户并返回/填充是否已赞，未登录 `liked=false`。  
 Auth-required: `POST /api/picture/{id}/like`, `DELETE /api/picture/{id}/like`.  
 列表与详情 `PictureVO` 含 `likeCount`、`liked`。
+
+## Team Space
+`space` / `space_member` / `space_invite` 表存储团队空间与成员（camelCase 列）。见 `sql/space.sql`、`sql/space_member.sql`、`sql/space_invite.sql`。  
+角色：`CREATOR`（唯一创建者）、`EDITOR`、`VIEWER`；本阶段只做成员管理，角色对资源的权限矩阵待定。  
+退出/踢出成员使用**物理删除**（避免软删除占用 `uk_space_user`）。  
+邀请：创建者发起，`userId` 或 `userAccount` 二选一（都传以 `userId` 为准）；待同意后方可加入；邀请角色仅 `EDITOR` / `VIEWER`。  
+通知类型 `SPACE_INVITE`；`notification.spaceId` 可空，供深链。取消邀请 / 拒绝 / 解散不删历史通知。  
+解散：软删 `space`，物理清成员与 `PENDING` 邀请。
+
+Auth-required（均需登录）：  
+`POST /api/space`，`GET /api/space/my`，`GET|PUT|DELETE /api/space/{id}`，  
+`GET /api/space/{id}/members`，`PUT /api/space/{id}/members/{userId}/role`，`DELETE /api/space/{id}/members/{userId}`，`DELETE /api/space/{id}/members/me`，  
+`POST|GET /api/space/{id}/invites`，`GET /api/space/invites/pending`，  
+`POST /api/space/invites/{inviteId}/accept|reject`，`DELETE /api/space/invites/{inviteId}`。
 

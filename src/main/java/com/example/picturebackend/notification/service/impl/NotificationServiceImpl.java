@@ -42,7 +42,8 @@ public class NotificationServiceImpl implements NotificationService {
     }
 
     @Override
-    public void create(Long receiverId, Long senderId, String type, Long pictureId, Long commentId, String content) {
+    public void create(Long receiverId, Long senderId, String type, Long pictureId, Long commentId, Long spaceId,
+                       String content) {
         if (receiverId == null || senderId == null || !StringUtils.hasText(type)) {
             return;
         }
@@ -56,6 +57,7 @@ public class NotificationServiceImpl implements NotificationService {
         notification.setType(type);
         notification.setPictureId(pictureId);
         notification.setCommentId(commentId);
+        notification.setSpaceId(spaceId);
         notification.setContent(truncateContent(content));
         notification.setIsRead(0);
 

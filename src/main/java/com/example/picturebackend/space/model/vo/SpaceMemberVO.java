@@ -1,4 +1,4 @@
-package com.example.picturebackend.notification.model.vo;
+package com.example.picturebackend.space.model.vo;
 
 import com.example.picturebackend.user.model.vo.UserVO;
 import lombok.Data;
@@ -7,25 +7,17 @@ import java.io.Serializable;
 import java.time.LocalDateTime;
 
 @Data
-public class NotificationVO implements Serializable {
+public class SpaceMemberVO implements Serializable {
 
     private static final long serialVersionUID = 1L;
 
     private Long id;
 
-    private String type;
-
-    private Long pictureId;
-
-    private Long commentId;
-
     private Long spaceId;
 
-    private String content;
-
-    private Integer isRead;
+    private String role;
 
     private LocalDateTime createTime;
 
-    private UserVO sender;
+    private UserVO user;
 }

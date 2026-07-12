@@ -13,6 +13,8 @@ public final class NotificationType {
 
     public static final String LIKE = "LIKE";
 
+    public static final String SPACE_INVITE = "SPACE_INVITE";
+
     private NotificationType() {
     }
 }
