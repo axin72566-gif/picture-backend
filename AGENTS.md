@@ -42,11 +42,21 @@ Auth-required: `POST /api/user/follow/{followedId}`, `DELETE /api/user/follow/{f
 ## Notification
 `notification` table stores in-app notifications (camelCase columns: `id`, `receiverId`, `senderId`, `type`, `pictureId`, `commentId`, `content`, `isRead`, `createTime`, `isDelete`). See `sql/notification.sql`.
 
-Types: `FOLLOW`（有人关注我）、`COMMENT`（有人评论我的图片）、`REPLY`（有人回复我的评论）。  
+Types: `FOLLOW`（有人关注我）、`COMMENT`（有人评论我的图片）、`REPLY`（有人回复我的评论）、`LIKE`（有人点赞我的图片）。  
 写入规则：不通知自己；回复时若图片作者与父评论作者为同一人，只写一条且优先 `REPLY`。  
-关注成功、发表评论后与业务同事务写入；取消关注 / 删除评论不删除历史通知。
+关注成功、发表评论、点赞成功后与业务同事务写入；取消关注 / 删除评论 / 取消点赞不删除历史通知。
 
 Auth-required: `GET /api/notification/page`, `GET /api/notification/unread/count`, `PUT /api/notification/{id}/read`, `PUT /api/notification/read/all`.  
-Public: `GET /api/picture/{id}`（通知评论深链打开图片详情）。  
+Public: `GET /api/picture/{id}`（通知评论/点赞深链打开图片详情）。  
 前端通过轮询未读数与列表拉取；无 SSE/WebSocket。
+
+## Picture Like
+`picture_like` table stores picture likes (camelCase columns: `id`, `userId`, `pictureId`, `createTime`, `isDelete`). See `sql/picture_like.sql`.  
+取消点赞使用**物理删除**（避免软删除占用 `uk_user_picture` 唯一索引导致无法再次点赞）。  
+禁止给自己的图片点赞。
+
+Public endpoints (no auth required): `GET /api/picture/{id}/likes`.  
+`like/status` 与公共图库 `GET /api/picture/page`、`GET /api/picture/{id}` 走 `OptionalAuthInterceptor`：有合法 token 时识别当前用户并返回/填充是否已赞，未登录 `liked=false`。  
+Auth-required: `POST /api/picture/{id}/like`, `DELETE /api/picture/{id}/like`.  
+列表与详情 `PictureVO` 含 `likeCount`、`liked`。
 

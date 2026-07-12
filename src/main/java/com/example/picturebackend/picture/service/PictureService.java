@@ -10,7 +10,7 @@ public interface PictureService {
 
     PictureVO uploadPicture(MultipartFile file, Long userId);
 
-    IPage<PictureVO> pagePictures(PictureQueryRequest request);
+    IPage<PictureVO> pagePictures(PictureQueryRequest request, Long currentUserId);
 
     IPage<PictureVO> pageMyPictures(PictureQueryRequest request, Long userId);
 
@@ -18,5 +18,5 @@ public interface PictureService {
 
     void deletePicture(Long id, Long userId);
 
-    PictureVO getPictureById(Long id);
+    PictureVO getPictureById(Long id, Long currentUserId);
 }

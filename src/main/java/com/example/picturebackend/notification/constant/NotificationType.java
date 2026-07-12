@@ -11,6 +11,8 @@ public final class NotificationType {
 
     public static final String REPLY = "REPLY";
 
+    public static final String LIKE = "LIKE";
+
     private NotificationType() {
     }
 }

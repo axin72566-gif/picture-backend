@@ -14,6 +14,7 @@ import com.example.picturebackend.picture.model.converter.PictureConverter;
 import com.example.picturebackend.picture.model.dto.PictureQueryRequest;
 import com.example.picturebackend.picture.model.dto.PictureUpdateRequest;
 import com.example.picturebackend.picture.model.vo.PictureVO;
+import com.example.picturebackend.picture.service.PictureLikeService;
 import com.example.picturebackend.picture.service.PictureService;
 import com.example.picturebackend.user.entity.User;
 import com.example.picturebackend.user.mapper.UserMapper;
@@ -29,7 +30,11 @@ import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.time.LocalDate;
-import java.util.*;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -52,13 +57,20 @@ public class PictureServiceImpl implements PictureService {
 
     private final UserMapper userMapper;
 
+    private final PictureLikeService pictureLikeService;
+
     private final COSClient cosClient;
 
     private final CosProperties cosProperties;
 
-    public PictureServiceImpl(PictureMapper pictureMapper, UserMapper userMapper, COSClient cosClient, CosProperties cosProperties) {
+    public PictureServiceImpl(PictureMapper pictureMapper,
+                              UserMapper userMapper,
+                              PictureLikeService pictureLikeService,
+                              COSClient cosClient,
+                              CosProperties cosProperties) {
         this.pictureMapper = pictureMapper;
         this.userMapper = userMapper;
+        this.pictureLikeService = pictureLikeService;
         this.cosClient = cosClient;
         this.cosProperties = cosProperties;
     }
@@ -128,20 +140,21 @@ public class PictureServiceImpl implements PictureService {
         PictureVO vo = PictureConverter.toVO(picture);
         User user = userMapper.selectById(userId);
         vo.setUser(UserConverter.toVO(user));
+        enrichLikeFields(List.of(vo), userId);
         return vo;
     }
 
     @Override
-    public IPage<PictureVO> pagePictures(PictureQueryRequest request) {
-        return page(request, null);
+    public IPage<PictureVO> pagePictures(PictureQueryRequest request, Long currentUserId) {
+        return page(request, null, currentUserId);
     }
 
     @Override
     public IPage<PictureVO> pageMyPictures(PictureQueryRequest request, Long userId) {
-        return page(request, userId);
+        return page(request, userId, userId);
     }
 
-    private IPage<PictureVO> page(PictureQueryRequest request, Long userId) {
+    private IPage<PictureVO> page(PictureQueryRequest request, Long ownerUserId, Long currentUserId) {
         Page<Picture> page = new Page<>(request.getCurrent(), request.getPageSize());
 
         LambdaQueryWrapper<Picture> wrapper = new LambdaQueryWrapper<>();
@@ -158,8 +171,8 @@ public class PictureServiceImpl implements PictureService {
         if (request.getMaxSize() != null) {
             wrapper.le(Picture::getSize, request.getMaxSize());
         }
-        if (userId != null) {
-            wrapper.eq(Picture::getUserId, userId);
+        if (ownerUserId != null) {
+            wrapper.eq(Picture::getUserId, ownerUserId);
         }
 
         if (StringUtils.isNotBlank(request.getSortField())) {
@@ -190,6 +203,7 @@ public class PictureServiceImpl implements PictureService {
             records.forEach(vo -> vo.setUser(userVOMap.get(vo.getUserId())));
         }
 
+        enrichLikeFields(records, currentUserId);
         return voPage;
     }
 
@@ -221,6 +235,7 @@ public class PictureServiceImpl implements PictureService {
         PictureVO vo = PictureConverter.toVO(picture);
         User user = userMapper.selectById(userId);
         vo.setUser(UserConverter.toVO(user));
+        enrichLikeFields(List.of(vo), userId);
         return vo;
     }
 
@@ -247,7 +262,7 @@ public class PictureServiceImpl implements PictureService {
     }
 
     @Override
-    public PictureVO getPictureById(Long id) {
+    public PictureVO getPictureById(Long id, Long currentUserId) {
         if (id == null || id <= 0) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR, "图片 ID 不能为空");
         }
@@ -260,7 +275,24 @@ public class PictureServiceImpl implements PictureService {
             User user = userMapper.selectById(picture.getUserId());
             vo.setUser(UserConverter.toVO(user));
         }
+        enrichLikeFields(List.of(vo), currentUserId);
         return vo;
+    }
+
+    private void enrichLikeFields(List<PictureVO> records, Long currentUserId) {
+        if (org.springframework.util.CollectionUtils.isEmpty(records)) {
+            return;
+        }
+        List<Long> pictureIds = records.stream()
+                .map(PictureVO::getId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toList());
+        Map<Long, Long> countMap = pictureLikeService.countByPictureIds(pictureIds);
+        Set<Long> likedIds = pictureLikeService.findLikedPictureIds(currentUserId, pictureIds);
+        for (PictureVO vo : records) {
+            vo.setLikeCount(countMap.getOrDefault(vo.getId(), 0L));
+            vo.setLiked(likedIds.contains(vo.getId()));
+        }
     }
 
     private String extractKey(String url) {

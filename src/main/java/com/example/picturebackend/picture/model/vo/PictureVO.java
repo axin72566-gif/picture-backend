@@ -33,5 +33,9 @@ public class PictureVO implements Serializable {
 
     private UserVO user;
 
+    private Long likeCount;
+
+    private Boolean liked;
+
     private LocalDateTime createTime;
 }

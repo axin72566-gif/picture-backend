@@ -21,9 +21,14 @@ public class WebMvcConfig implements WebMvcConfigurer {
 
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
-        // follow/status 允许未登录访问，但有 token 时需识别当前用户以返回正确关注态
+        // 可选登录：有合法 token 时识别当前用户（关注态 / 点赞态 / 列表 liked）
         registry.addInterceptor(optionalAuthInterceptor)
-                .addPathPatterns("/api/user/{id:\\d+}/follow/status");
+                .addPathPatterns(
+                        "/api/user/{id:\\d+}/follow/status",
+                        "/api/picture/page",
+                        "/api/picture/{id:\\d+}",
+                        "/api/picture/{id:\\d+}/like/status"
+                );
 
         registry.addInterceptor(authInterceptor)
                 .addPathPatterns("/api/**")
@@ -36,7 +41,9 @@ public class WebMvcConfig implements WebMvcConfigurer {
                         "/api/user/{id:\\d+}/following",
                         "/api/user/{id:\\d+}/follow/status",
                         "/api/picture/page",
-                        "/api/picture/{id:\\d+}"
+                        "/api/picture/{id:\\d+}",
+                        "/api/picture/{id:\\d+}/likes",
+                        "/api/picture/{id:\\d+}/like/status"
                 );
     }
 
