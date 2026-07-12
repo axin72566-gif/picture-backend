@@ -246,6 +246,23 @@ public class PictureServiceImpl implements PictureService {
         log.info("图片删除成功 id={}", id);
     }
 
+    @Override
+    public PictureVO getPictureById(Long id) {
+        if (id == null || id <= 0) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "图片 ID 不能为空");
+        }
+        Picture picture = pictureMapper.selectById(id);
+        if (picture == null || picture.getIsDelete() == 1) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "图片不存在");
+        }
+        PictureVO vo = PictureConverter.toVO(picture);
+        if (picture.getUserId() != null) {
+            User user = userMapper.selectById(picture.getUserId());
+            vo.setUser(UserConverter.toVO(user));
+        }
+        return vo;
+    }
+
     private String extractKey(String url) {
         String baseUrl = cosProperties.getBaseUrl();
         if (url != null && url.startsWith(baseUrl)) {

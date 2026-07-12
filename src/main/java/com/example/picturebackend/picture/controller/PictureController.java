@@ -44,6 +44,12 @@ public class PictureController {
         return ResultUtils.success(page);
     }
 
+    @GetMapping("/{id:\\d+}")
+    public BaseResponse<PictureVO> getPictureById(@PathVariable Long id) {
+        PictureVO vo = pictureService.getPictureById(id);
+        return ResultUtils.success(vo);
+    }
+
     @GetMapping("/my/page")
     public BaseResponse<IPage<PictureVO>> pageMyPictures(PictureQueryRequest request,
                                                          HttpServletRequest httpRequest) {

@@ -35,7 +35,8 @@ public class WebMvcConfig implements WebMvcConfigurer {
                         "/api/user/{id:\\d+}/followers",
                         "/api/user/{id:\\d+}/following",
                         "/api/user/{id:\\d+}/follow/status",
-                        "/api/picture/page"
+                        "/api/picture/page",
+                        "/api/picture/{id:\\d+}"
                 );
     }
 

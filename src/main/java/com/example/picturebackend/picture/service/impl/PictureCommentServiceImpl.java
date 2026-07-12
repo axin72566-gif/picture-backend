@@ -5,6 +5,8 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.example.picturebackend.common.ErrorCode;
 import com.example.picturebackend.exception.BusinessException;
+import com.example.picturebackend.notification.constant.NotificationType;
+import com.example.picturebackend.notification.service.NotificationService;
 import com.example.picturebackend.picture.entity.Picture;
 import com.example.picturebackend.picture.entity.PictureComment;
 import com.example.picturebackend.picture.mapper.PictureCommentMapper;
@@ -39,12 +41,16 @@ public class PictureCommentServiceImpl implements PictureCommentService {
 
     private final UserMapper userMapper;
 
+    private final NotificationService notificationService;
+
     public PictureCommentServiceImpl(PictureCommentMapper pictureCommentMapper,
                                      PictureMapper pictureMapper,
-                                     UserMapper userMapper) {
+                                     UserMapper userMapper,
+                                     NotificationService notificationService) {
         this.pictureCommentMapper = pictureCommentMapper;
         this.pictureMapper = pictureMapper;
         this.userMapper = userMapper;
+        this.notificationService = notificationService;
     }
 
     @Override
@@ -75,12 +81,13 @@ public class PictureCommentServiceImpl implements PictureCommentService {
         comment.setUserId(userId);
         comment.setContent(content);
 
+        PictureComment parent = null;
         Long parentId = request.getParentId();
         if (parentId == null) {
             comment.setParentId(null);
             comment.setRootId(null);
         } else {
-            PictureComment parent = pictureCommentMapper.selectById(parentId);
+            parent = pictureCommentMapper.selectById(parentId);
             if (parent == null) {
                 throw new BusinessException(ErrorCode.PARAMS_ERROR, "被回复的评论不存在");
             }
@@ -97,11 +104,40 @@ public class PictureCommentServiceImpl implements PictureCommentService {
             throw new BusinessException(ErrorCode.SERVER_ERROR, "发表评论失败");
         }
 
+        createCommentNotifications(picture, parent, comment, userId, content);
+
         PictureCommentVO vo = PictureCommentConverter.toVO(comment);
         vo.setReplyCount(0L);
         User user = userMapper.selectById(userId);
         vo.setUser(UserConverter.toVO(user));
         return vo;
+    }
+
+    /**
+     * 通知图片作者；若为回复再通知父评论作者。同一接收人只写一条，优先 REPLY。
+     */
+    private void createCommentNotifications(Picture picture, PictureComment parent,
+                                            PictureComment comment, Long userId, String content) {
+        Long pictureOwnerId = picture.getUserId();
+        Long parentAuthorId = parent != null ? parent.getUserId() : null;
+        boolean notifyParentAuthor = parentAuthorId != null && !Objects.equals(userId, parentAuthorId);
+        boolean notifyPictureOwner = pictureOwnerId != null && !Objects.equals(userId, pictureOwnerId);
+
+        if (notifyParentAuthor) {
+            notificationService.create(
+                    parentAuthorId, userId, NotificationType.REPLY,
+                    picture.getId(), comment.getId(), content);
+            // 图片作者与父评论作者为同一人时只写一条（REPLY）
+            if (Objects.equals(pictureOwnerId, parentAuthorId)) {
+                notifyPictureOwner = false;
+            }
+        }
+
+        if (notifyPictureOwner) {
+            notificationService.create(
+                    pictureOwnerId, userId, NotificationType.COMMENT,
+                    picture.getId(), comment.getId(), content);
+        }
     }
 
     @Override

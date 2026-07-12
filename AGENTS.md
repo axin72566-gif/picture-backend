@@ -38,3 +38,15 @@ The only test is `PictureBackendApplicationTests.contextLoads`, a `@SpringBootTe
 Public endpoints (no auth required): `GET /api/user/{id}/followers`, `GET /api/user/{id}/following`, `GET /api/user/{id}/follow/status`.  
 `follow/status` still runs `OptionalAuthInterceptor`：有合法 token 时识别当前用户并返回是否已关注，未登录返回 `false`。  
 Auth-required: `POST /api/user/follow/{followedId}`, `DELETE /api/user/follow/{followedId}`.
+
+## Notification
+`notification` table stores in-app notifications (camelCase columns: `id`, `receiverId`, `senderId`, `type`, `pictureId`, `commentId`, `content`, `isRead`, `createTime`, `isDelete`). See `sql/notification.sql`.
+
+Types: `FOLLOW`（有人关注我）、`COMMENT`（有人评论我的图片）、`REPLY`（有人回复我的评论）。  
+写入规则：不通知自己；回复时若图片作者与父评论作者为同一人，只写一条且优先 `REPLY`。  
+关注成功、发表评论后与业务同事务写入；取消关注 / 删除评论不删除历史通知。
+
+Auth-required: `GET /api/notification/page`, `GET /api/notification/unread/count`, `PUT /api/notification/{id}/read`, `PUT /api/notification/read/all`.  
+Public: `GET /api/picture/{id}`（通知评论深链打开图片详情）。  
+前端通过轮询未读数与列表拉取；无 SSE/WebSocket。
+

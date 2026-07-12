@@ -6,6 +6,8 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.example.picturebackend.common.ErrorCode;
 import com.example.picturebackend.common.PageRequest;
 import com.example.picturebackend.exception.BusinessException;
+import com.example.picturebackend.notification.constant.NotificationType;
+import com.example.picturebackend.notification.service.NotificationService;
 import com.example.picturebackend.user.entity.User;
 import com.example.picturebackend.user.entity.UserFollow;
 import com.example.picturebackend.user.mapper.UserFollowMapper;
@@ -29,9 +31,14 @@ public class UserFollowServiceImpl implements UserFollowService {
 
     private final UserMapper userMapper;
 
-    public UserFollowServiceImpl(UserFollowMapper userFollowMapper, UserMapper userMapper) {
+    private final NotificationService notificationService;
+
+    public UserFollowServiceImpl(UserFollowMapper userFollowMapper,
+                                 UserMapper userMapper,
+                                 NotificationService notificationService) {
         this.userFollowMapper = userFollowMapper;
         this.userMapper = userMapper;
+        this.notificationService = notificationService;
     }
 
     @Override
@@ -56,6 +63,7 @@ public class UserFollowServiceImpl implements UserFollowService {
         // 兼容历史软删除残留：唯一索引仍占用时先恢复，避免再次关注失败
         int restored = userFollowMapper.restoreSoftDeleted(followerId, followedId);
         if (restored > 0) {
+            notificationService.create(followedId, followerId, NotificationType.FOLLOW, null, null, null);
             return;
         }
 
@@ -66,6 +74,7 @@ public class UserFollowServiceImpl implements UserFollowService {
         if (rows <= 0) {
             throw new BusinessException(ErrorCode.SERVER_ERROR, "关注失败");
         }
+        notificationService.create(followedId, followerId, NotificationType.FOLLOW, null, null, null);
     }
 
     @Override

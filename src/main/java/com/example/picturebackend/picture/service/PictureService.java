@@ -17,4 +17,6 @@ public interface PictureService {
     PictureVO updatePicture(PictureUpdateRequest request, Long userId);
 
     void deletePicture(Long id, Long userId);
+
+    PictureVO getPictureById(Long id);
 }
