@@ -13,15 +13,15 @@ CREATE TABLE `picture` (
     `height`      INT                   DEFAULT NULL COMMENT '图片高度(px)',
     `contentType` VARCHAR(64)  NOT NULL COMMENT 'MIME 类型',
     `format`      VARCHAR(32)           DEFAULT NULL COMMENT '图片格式后缀',
+    `description` VARCHAR(512)          DEFAULT NULL COMMENT '图片简介',
     `userId`      BIGINT       NOT NULL COMMENT '上传人ID',
+    `spaceId`     BIGINT                DEFAULT NULL COMMENT '所属空间ID，个人图为 NULL',
     `createTime`  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     `updateTime`  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     `isDelete`    TINYINT      NOT NULL DEFAULT 0 COMMENT '逻辑删除 0-未删 1-已删',
     PRIMARY KEY (`id`),
-    KEY `idx_userId` (`userId`)
+    KEY `idx_userId` (`userId`),
+    KEY `idx_spaceId` (`spaceId`)
 ) ENGINE = InnoDB
   DEFAULT CHARSET = utf8mb4
   COLLATE = utf8mb4_unicode_ci COMMENT ='图片表';
-
-ALTER TABLE `picture`
-    ADD COLUMN `description` VARCHAR(512) DEFAULT NULL COMMENT '图片简介' AFTER `height`;

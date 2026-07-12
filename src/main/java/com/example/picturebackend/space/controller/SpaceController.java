@@ -7,6 +7,9 @@ import com.example.picturebackend.common.PageRequest;
 import com.example.picturebackend.common.ResultUtils;
 import com.example.picturebackend.constant.UserConstant;
 import com.example.picturebackend.exception.BusinessException;
+import com.example.picturebackend.picture.model.dto.PictureQueryRequest;
+import com.example.picturebackend.picture.model.vo.PictureVO;
+import com.example.picturebackend.picture.service.PictureService;
 import com.example.picturebackend.space.model.dto.SpaceCreateRequest;
 import com.example.picturebackend.space.model.dto.SpaceInviteRequest;
 import com.example.picturebackend.space.model.dto.SpaceMemberRoleUpdateRequest;
@@ -37,12 +40,16 @@ public class SpaceController {
 
     private final SpaceInviteService spaceInviteService;
 
+    private final PictureService pictureService;
+
     public SpaceController(SpaceService spaceService,
                            SpaceMemberService spaceMemberService,
-                           SpaceInviteService spaceInviteService) {
+                           SpaceInviteService spaceInviteService,
+                           PictureService pictureService) {
         this.spaceService = spaceService;
         this.spaceMemberService = spaceMemberService;
         this.spaceInviteService = spaceInviteService;
+        this.pictureService = pictureService;
     }
 
     @PostMapping
@@ -104,6 +111,14 @@ public class SpaceController {
         Long userId = requireLoginUserId(httpRequest);
         spaceService.dissolveSpace(id, userId);
         return ResultUtils.success(null);
+    }
+
+    @GetMapping("/{id:\\d+}/pictures")
+    public BaseResponse<IPage<PictureVO>> pageSpacePictures(@PathVariable Long id,
+                                                            PictureQueryRequest request,
+                                                            HttpServletRequest httpRequest) {
+        Long userId = requireLoginUserId(httpRequest);
+        return ResultUtils.success(pictureService.pageSpacePictures(id, request, userId));
     }
 
     @GetMapping("/{id:\\d+}/members")

@@ -38,6 +38,11 @@ public class Picture implements Serializable {
 
     private Long userId;
 
+    /**
+     * 所属空间 ID；null 表示个人图。
+     */
+    private Long spaceId;
+
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createTime;
 

@@ -21,4 +21,27 @@ public final class SpaceRole {
     public static boolean isValid(String role) {
         return CREATOR.equals(role) || isAssignable(role);
     }
+
+    /**
+     * 角色等级：VIEWER &lt; EDITOR &lt; CREATOR。
+     */
+    public static int level(String role) {
+        if (CREATOR.equals(role)) {
+            return 3;
+        }
+        if (EDITOR.equals(role)) {
+            return 2;
+        }
+        if (VIEWER.equals(role)) {
+            return 1;
+        }
+        return 0;
+    }
+
+    /**
+     * 当前角色是否不低于所需角色。
+     */
+    public static boolean atLeast(String role, String minRole) {
+        return level(role) >= level(minRole);
+    }
 }

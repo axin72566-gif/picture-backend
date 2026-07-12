@@ -16,6 +16,8 @@ import com.example.picturebackend.picture.model.dto.PictureCommentAddRequest;
 import com.example.picturebackend.picture.model.dto.PictureCommentQueryRequest;
 import com.example.picturebackend.picture.model.vo.PictureCommentVO;
 import com.example.picturebackend.picture.service.PictureCommentService;
+import com.example.picturebackend.space.constant.SpaceRole;
+import com.example.picturebackend.space.service.SpaceService;
 import com.example.picturebackend.user.entity.User;
 import com.example.picturebackend.user.mapper.UserMapper;
 import com.example.picturebackend.user.model.converter.UserConverter;
@@ -43,14 +45,18 @@ public class PictureCommentServiceImpl implements PictureCommentService {
 
     private final NotificationService notificationService;
 
+    private final SpaceService spaceService;
+
     public PictureCommentServiceImpl(PictureCommentMapper pictureCommentMapper,
                                      PictureMapper pictureMapper,
                                      UserMapper userMapper,
-                                     NotificationService notificationService) {
+                                     NotificationService notificationService,
+                                     SpaceService spaceService) {
         this.pictureCommentMapper = pictureCommentMapper;
         this.pictureMapper = pictureMapper;
         this.userMapper = userMapper;
         this.notificationService = notificationService;
+        this.spaceService = spaceService;
     }
 
     @Override
@@ -75,6 +81,7 @@ public class PictureCommentServiceImpl implements PictureCommentService {
         if (picture == null) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR, "图片不存在");
         }
+        requireSpaceViewerIfNeeded(picture, userId);
 
         PictureComment comment = new PictureComment();
         comment.setPictureId(pictureId);
@@ -141,7 +148,7 @@ public class PictureCommentServiceImpl implements PictureCommentService {
     }
 
     @Override
-    public IPage<PictureCommentVO> pageRootComments(Long pictureId, PictureCommentQueryRequest request) {
+    public IPage<PictureCommentVO> pageRootComments(Long pictureId, PictureCommentQueryRequest request, Long userId) {
         if (pictureId == null || pictureId <= 0) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR, "图片 ID 不能为空");
         }
@@ -149,6 +156,7 @@ public class PictureCommentServiceImpl implements PictureCommentService {
         if (picture == null) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR, "图片不存在");
         }
+        requireSpaceViewerIfNeeded(picture, userId);
 
         PictureCommentQueryRequest query = request != null ? request : new PictureCommentQueryRequest();
         Page<PictureComment> page = new Page<>(query.getCurrent(), query.getPageSize());
@@ -162,7 +170,7 @@ public class PictureCommentServiceImpl implements PictureCommentService {
     }
 
     @Override
-    public IPage<PictureCommentVO> pageReplies(Long rootId, PictureCommentQueryRequest request) {
+    public IPage<PictureCommentVO> pageReplies(Long rootId, PictureCommentQueryRequest request, Long userId) {
         if (rootId == null || rootId <= 0) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR, "根评论 ID 不能为空");
         }
@@ -170,6 +178,11 @@ public class PictureCommentServiceImpl implements PictureCommentService {
         if (root == null || root.getRootId() != null) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR, "根评论不存在");
         }
+        Picture picture = pictureMapper.selectById(root.getPictureId());
+        if (picture == null) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "图片不存在");
+        }
+        requireSpaceViewerIfNeeded(picture, userId);
 
         PictureCommentQueryRequest query = request != null ? request : new PictureCommentQueryRequest();
         Page<PictureComment> page = new Page<>(query.getCurrent(), query.getPageSize());
@@ -196,6 +209,7 @@ public class PictureCommentServiceImpl implements PictureCommentService {
         if (picture == null) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR, "图片不存在");
         }
+        requireSpaceViewerIfNeeded(picture, userId);
 
         boolean isAuthor = Objects.equals(comment.getUserId(), userId);
         boolean isPictureOwner = Objects.equals(picture.getUserId(), userId);
@@ -209,6 +223,12 @@ public class PictureCommentServiceImpl implements PictureCommentService {
         if (comment.getRootId() == null) {
             pictureCommentMapper.delete(new LambdaQueryWrapper<PictureComment>()
                     .eq(PictureComment::getRootId, commentId));
+        }
+    }
+
+    private void requireSpaceViewerIfNeeded(Picture picture, Long userId) {
+        if (picture.getSpaceId() != null) {
+            spaceService.requireRoleAtLeast(picture.getSpaceId(), userId, SpaceRole.VIEWER);
         }
     }
 

@@ -24,6 +24,11 @@ public interface SpaceService {
 
     SpaceMember requireMember(Long spaceId, Long userId);
 
+    /**
+     * 要求成员角色不低于 minRole（VIEWER / EDITOR / CREATOR）。
+     */
+    SpaceMember requireRoleAtLeast(Long spaceId, Long userId, String minRole);
+
     void requireCreator(Long spaceId, Long userId);
 
     boolean isMember(Long spaceId, Long userId);

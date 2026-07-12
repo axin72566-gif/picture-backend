@@ -28,5 +28,5 @@ public interface PictureLikeService {
      */
     Set<Long> findLikedPictureIds(Long userId, Collection<Long> pictureIds);
 
-    IPage<UserVO> pageLikers(Long pictureId, PageRequest request);
+    IPage<UserVO> pageLikers(Long pictureId, PageRequest request, Long currentUserId);
 }

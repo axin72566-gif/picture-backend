@@ -40,9 +40,10 @@ public class PictureController {
 
     @PostMapping("/upload")
     public BaseResponse<PictureVO> upload(@RequestParam("file") MultipartFile file,
+                                          @RequestParam(value = "spaceId", required = false) Long spaceId,
                                           HttpServletRequest request) {
         Long userId = (Long) request.getAttribute(UserConstant.CURRENT_USER_ID_ATTR);
-        PictureVO vo = pictureService.uploadPicture(file, userId);
+        PictureVO vo = pictureService.uploadPicture(file, userId, spaceId);
         return ResultUtils.success(vo);
     }
 
@@ -114,8 +115,11 @@ public class PictureController {
     }
 
     @GetMapping("/{id:\\d+}/likes")
-    public BaseResponse<IPage<UserVO>> pageLikers(@PathVariable Long id, PageRequest pageRequest) {
-        IPage<UserVO> page = pictureLikeService.pageLikers(id, pageRequest);
+    public BaseResponse<IPage<UserVO>> pageLikers(@PathVariable Long id,
+                                                  PageRequest pageRequest,
+                                                  HttpServletRequest request) {
+        Long currentUserId = (Long) request.getAttribute(UserConstant.CURRENT_USER_ID_ATTR);
+        IPage<UserVO> page = pictureLikeService.pageLikers(id, pageRequest, currentUserId);
         return ResultUtils.success(page);
     }
 }

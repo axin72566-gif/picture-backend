@@ -16,6 +16,8 @@ import com.example.picturebackend.picture.model.dto.PictureUpdateRequest;
 import com.example.picturebackend.picture.model.vo.PictureVO;
 import com.example.picturebackend.picture.service.PictureLikeService;
 import com.example.picturebackend.picture.service.PictureService;
+import com.example.picturebackend.space.constant.SpaceRole;
+import com.example.picturebackend.space.service.SpaceService;
 import com.example.picturebackend.user.entity.User;
 import com.example.picturebackend.user.mapper.UserMapper;
 import com.example.picturebackend.user.model.converter.UserConverter;
@@ -59,6 +61,8 @@ public class PictureServiceImpl implements PictureService {
 
     private final PictureLikeService pictureLikeService;
 
+    private final SpaceService spaceService;
+
     private final COSClient cosClient;
 
     private final CosProperties cosProperties;
@@ -66,17 +70,19 @@ public class PictureServiceImpl implements PictureService {
     public PictureServiceImpl(PictureMapper pictureMapper,
                               UserMapper userMapper,
                               PictureLikeService pictureLikeService,
+                              SpaceService spaceService,
                               COSClient cosClient,
                               CosProperties cosProperties) {
         this.pictureMapper = pictureMapper;
         this.userMapper = userMapper;
         this.pictureLikeService = pictureLikeService;
+        this.spaceService = spaceService;
         this.cosClient = cosClient;
         this.cosProperties = cosProperties;
     }
 
     @Override
-    public PictureVO uploadPicture(MultipartFile file, Long userId) {
+    public PictureVO uploadPicture(MultipartFile file, Long userId, Long spaceId) {
         String contentType = file.getContentType();
         if (contentType == null || !ALLOWED_CONTENT_TYPES.contains(contentType)) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR, "文件类型不支持，仅支持 jpg/png/gif/webp");
@@ -90,6 +96,16 @@ public class PictureServiceImpl implements PictureService {
         String originalName = file.getOriginalFilename();
         if (originalName == null || originalName.isBlank()) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR, "文件名不能为空");
+        }
+
+        Long resolvedSpaceId = null;
+        if (spaceId != null) {
+            if (spaceId <= 0) {
+                throw new BusinessException(ErrorCode.PARAMS_ERROR, "空间 ID 无效");
+            }
+            spaceService.requireSpace(spaceId);
+            spaceService.requireRoleAtLeast(spaceId, userId, SpaceRole.EDITOR);
+            resolvedSpaceId = spaceId;
         }
 
         BufferedImage image;
@@ -134,9 +150,11 @@ public class PictureServiceImpl implements PictureService {
         picture.setContentType(contentType);
         picture.setFormat(ext.isEmpty() ? null : ext.substring(1));
         picture.setUserId(userId);
+        picture.setSpaceId(resolvedSpaceId);
         pictureMapper.insert(picture);
 
-        log.info("图片上传成功 id={}, url={}, userId={}", picture.getId(), url, userId);
+        log.info("图片上传成功 id={}, url={}, userId={}, spaceId={}",
+                picture.getId(), url, userId, resolvedSpaceId);
         PictureVO vo = PictureConverter.toVO(picture);
         User user = userMapper.selectById(userId);
         vo.setUser(UserConverter.toVO(user));
@@ -146,19 +164,42 @@ public class PictureServiceImpl implements PictureService {
 
     @Override
     public IPage<PictureVO> pagePictures(PictureQueryRequest request, Long currentUserId) {
-        return page(request, null, currentUserId);
+        return page(request, null, null, true, currentUserId);
     }
 
     @Override
     public IPage<PictureVO> pageMyPictures(PictureQueryRequest request, Long userId) {
-        return page(request, userId, userId);
+        return page(request, userId, null, false, userId);
     }
 
-    private IPage<PictureVO> page(PictureQueryRequest request, Long ownerUserId, Long currentUserId) {
+    @Override
+    public IPage<PictureVO> pageSpacePictures(Long spaceId, PictureQueryRequest request, Long userId) {
+        spaceService.requireSpace(spaceId);
+        spaceService.requireRoleAtLeast(spaceId, userId, SpaceRole.VIEWER);
+        PictureQueryRequest query = request != null ? request : new PictureQueryRequest();
+        return page(query, null, spaceId, false, userId);
+    }
+
+    /**
+     * @param ownerUserId   非空时按上传人过滤
+     * @param filterSpaceId 非空时按空间过滤
+     * @param publicGallery true 时仅个人图（spaceId IS NULL）
+     */
+    private IPage<PictureVO> page(PictureQueryRequest request,
+                                  Long ownerUserId,
+                                  Long filterSpaceId,
+                                  boolean publicGallery,
+                                  Long currentUserId) {
         Page<Picture> page = new Page<>(request.getCurrent(), request.getPageSize());
 
         LambdaQueryWrapper<Picture> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(Picture::getIsDelete, 0);
+        if (publicGallery) {
+            wrapper.isNull(Picture::getSpaceId);
+        }
+        if (filterSpaceId != null) {
+            wrapper.eq(Picture::getSpaceId, filterSpaceId);
+        }
         if (StringUtils.isNotBlank(request.getName())) {
             wrapper.like(Picture::getName, request.getName());
         }
@@ -221,9 +262,7 @@ public class PictureServiceImpl implements PictureService {
         if (picture == null || picture.getIsDelete() == 1) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR, "图片不存在");
         }
-        if (!picture.getUserId().equals(userId)) {
-            throw new BusinessException(ErrorCode.NO_AUTH, "只能编辑自己的图片");
-        }
+        assertCanEdit(picture, userId);
 
         if (StringUtils.isNotBlank(request.getName())) {
             picture.setName(request.getName());
@@ -233,8 +272,10 @@ public class PictureServiceImpl implements PictureService {
         }
         pictureMapper.updateById(picture);
         PictureVO vo = PictureConverter.toVO(picture);
-        User user = userMapper.selectById(userId);
-        vo.setUser(UserConverter.toVO(user));
+        if (picture.getUserId() != null) {
+            User user = userMapper.selectById(picture.getUserId());
+            vo.setUser(UserConverter.toVO(user));
+        }
         enrichLikeFields(List.of(vo), userId);
         return vo;
     }
@@ -245,9 +286,7 @@ public class PictureServiceImpl implements PictureService {
         if (picture == null || picture.getIsDelete() == 1) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR, "图片不存在");
         }
-        if (!picture.getUserId().equals(userId)) {
-            throw new BusinessException(ErrorCode.NO_AUTH, "只能删除自己的图片");
-        }
+        assertCanDelete(picture, userId);
 
         String bucket = cosProperties.getBucket();
         String key = extractKey(picture.getUrl());
@@ -270,6 +309,7 @@ public class PictureServiceImpl implements PictureService {
         if (picture == null || picture.getIsDelete() == 1) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR, "图片不存在");
         }
+        assertCanView(picture, currentUserId);
         PictureVO vo = PictureConverter.toVO(picture);
         if (picture.getUserId() != null) {
             User user = userMapper.selectById(picture.getUserId());
@@ -277,6 +317,33 @@ public class PictureServiceImpl implements PictureService {
         }
         enrichLikeFields(List.of(vo), currentUserId);
         return vo;
+    }
+
+    private void assertCanView(Picture picture, Long userId) {
+        if (picture.getSpaceId() == null) {
+            return;
+        }
+        spaceService.requireRoleAtLeast(picture.getSpaceId(), userId, SpaceRole.VIEWER);
+    }
+
+    private void assertCanEdit(Picture picture, Long userId) {
+        if (picture.getSpaceId() == null) {
+            if (!Objects.equals(picture.getUserId(), userId)) {
+                throw new BusinessException(ErrorCode.NO_AUTH, "只能编辑自己的图片");
+            }
+            return;
+        }
+        spaceService.requireRoleAtLeast(picture.getSpaceId(), userId, SpaceRole.EDITOR);
+    }
+
+    private void assertCanDelete(Picture picture, Long userId) {
+        if (picture.getSpaceId() == null) {
+            if (!Objects.equals(picture.getUserId(), userId)) {
+                throw new BusinessException(ErrorCode.NO_AUTH, "只能删除自己的图片");
+            }
+            return;
+        }
+        spaceService.requireCreator(picture.getSpaceId(), userId);
     }
 
     private void enrichLikeFields(List<PictureVO> records, Long currentUserId) {

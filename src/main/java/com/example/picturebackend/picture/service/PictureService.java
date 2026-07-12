@@ -8,11 +8,19 @@ import org.springframework.web.multipart.MultipartFile;
 
 public interface PictureService {
 
-    PictureVO uploadPicture(MultipartFile file, Long userId);
+    /**
+     * 上传图片；spaceId 为空则为个人图，非空则为空间图（需 EDITOR+）。
+     */
+    PictureVO uploadPicture(MultipartFile file, Long userId, Long spaceId);
 
     IPage<PictureVO> pagePictures(PictureQueryRequest request, Long currentUserId);
 
     IPage<PictureVO> pageMyPictures(PictureQueryRequest request, Long userId);
+
+    /**
+     * 空间图片分页（需 VIEWER+）。
+     */
+    IPage<PictureVO> pageSpacePictures(Long spaceId, PictureQueryRequest request, Long userId);
 
     PictureVO updatePicture(PictureUpdateRequest request, Long userId);
 

@@ -13,6 +13,8 @@ import com.example.picturebackend.picture.entity.PictureLike;
 import com.example.picturebackend.picture.mapper.PictureLikeMapper;
 import com.example.picturebackend.picture.mapper.PictureMapper;
 import com.example.picturebackend.picture.service.PictureLikeService;
+import com.example.picturebackend.space.constant.SpaceRole;
+import com.example.picturebackend.space.service.SpaceService;
 import com.example.picturebackend.user.entity.User;
 import com.example.picturebackend.user.mapper.UserMapper;
 import com.example.picturebackend.user.model.converter.UserConverter;
@@ -43,23 +45,24 @@ public class PictureLikeServiceImpl implements PictureLikeService {
 
     private final NotificationService notificationService;
 
+    private final SpaceService spaceService;
+
     public PictureLikeServiceImpl(PictureLikeMapper pictureLikeMapper,
                                   PictureMapper pictureMapper,
                                   UserMapper userMapper,
-                                  NotificationService notificationService) {
+                                  NotificationService notificationService,
+                                  SpaceService spaceService) {
         this.pictureLikeMapper = pictureLikeMapper;
         this.pictureMapper = pictureMapper;
         this.userMapper = userMapper;
         this.notificationService = notificationService;
+        this.spaceService = spaceService;
     }
 
     @Override
     @Transactional
     public void like(Long userId, Long pictureId) {
-        Picture picture = pictureMapper.selectById(pictureId);
-        if (picture == null || Objects.equals(picture.getIsDelete(), 1)) {
-            throw new BusinessException(ErrorCode.PARAMS_ERROR, "图片不存在");
-        }
+        Picture picture = requireAccessiblePicture(pictureId, userId);
         if (Objects.equals(userId, picture.getUserId())) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR, "不能给自己的图片点赞");
         }
@@ -90,6 +93,7 @@ public class PictureLikeServiceImpl implements PictureLikeService {
     @Override
     @Transactional
     public void unlike(Long userId, Long pictureId) {
+        requireAccessiblePicture(pictureId, userId);
         int rows = pictureLikeMapper.deletePhysically(userId, pictureId);
         if (rows <= 0) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR, "未点赞该图片");
@@ -100,6 +104,13 @@ public class PictureLikeServiceImpl implements PictureLikeService {
     public boolean isLiked(Long userId, Long pictureId) {
         if (userId == null || pictureId == null) {
             return false;
+        }
+        Picture picture = pictureMapper.selectById(pictureId);
+        if (picture == null || Objects.equals(picture.getIsDelete(), 1)) {
+            return false;
+        }
+        if (picture.getSpaceId() != null) {
+            spaceService.requireRoleAtLeast(picture.getSpaceId(), userId, SpaceRole.VIEWER);
         }
         Long count = pictureLikeMapper.selectCount(new LambdaQueryWrapper<PictureLike>()
                 .eq(PictureLike::getUserId, userId)
@@ -153,11 +164,8 @@ public class PictureLikeServiceImpl implements PictureLikeService {
     }
 
     @Override
-    public IPage<UserVO> pageLikers(Long pictureId, PageRequest request) {
-        Picture picture = pictureMapper.selectById(pictureId);
-        if (picture == null || Objects.equals(picture.getIsDelete(), 1)) {
-            throw new BusinessException(ErrorCode.PARAMS_ERROR, "图片不存在");
-        }
+    public IPage<UserVO> pageLikers(Long pictureId, PageRequest request, Long currentUserId) {
+        requireAccessiblePicture(pictureId, currentUserId);
 
         Page<PictureLike> page = new Page<>(request.getCurrent(), request.getPageSize());
         LambdaQueryWrapper<PictureLike> wrapper = new LambdaQueryWrapper<PictureLike>()
@@ -188,5 +196,19 @@ public class PictureLikeServiceImpl implements PictureLikeService {
         IPage<UserVO> voPage = new Page<>(result.getCurrent(), result.getSize(), result.getTotal());
         voPage.setRecords(voList);
         return voPage;
+    }
+
+    /**
+     * 个人图任意可读；空间图需 VIEWER+（未登录抛 NOT_LOGIN）。
+     */
+    private Picture requireAccessiblePicture(Long pictureId, Long userId) {
+        Picture picture = pictureMapper.selectById(pictureId);
+        if (picture == null || Objects.equals(picture.getIsDelete(), 1)) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "图片不存在");
+        }
+        if (picture.getSpaceId() != null) {
+            spaceService.requireRoleAtLeast(picture.getSpaceId(), userId, SpaceRole.VIEWER);
+        }
+        return picture;
     }
 }

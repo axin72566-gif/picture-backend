@@ -23,6 +23,7 @@ public final class PictureConverter {
         vo.setFormat(picture.getFormat());
         vo.setDescription(picture.getDescription());
         vo.setUserId(picture.getUserId());
+        vo.setSpaceId(picture.getSpaceId());
         vo.setCreateTime(picture.getCreateTime());
         return vo;
     }

@@ -6,6 +6,8 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.example.picturebackend.common.ErrorCode;
 import com.example.picturebackend.common.PageRequest;
 import com.example.picturebackend.exception.BusinessException;
+import com.example.picturebackend.picture.entity.Picture;
+import com.example.picturebackend.picture.mapper.PictureMapper;
 import com.example.picturebackend.space.constant.SpaceRole;
 import com.example.picturebackend.space.entity.Space;
 import com.example.picturebackend.space.entity.SpaceMember;
@@ -41,12 +43,16 @@ public class SpaceServiceImpl implements SpaceService {
 
     private final SpaceInviteMapper spaceInviteMapper;
 
+    private final PictureMapper pictureMapper;
+
     public SpaceServiceImpl(SpaceMapper spaceMapper,
                             SpaceMemberMapper spaceMemberMapper,
-                            SpaceInviteMapper spaceInviteMapper) {
+                            SpaceInviteMapper spaceInviteMapper,
+                            PictureMapper pictureMapper) {
         this.spaceMapper = spaceMapper;
         this.spaceMemberMapper = spaceMemberMapper;
         this.spaceInviteMapper = spaceInviteMapper;
+        this.pictureMapper = pictureMapper;
     }
 
     @Override
@@ -133,6 +139,9 @@ public class SpaceServiceImpl implements SpaceService {
         }
         spaceMemberMapper.deleteAllBySpaceIdPhysically(spaceId);
         spaceInviteMapper.deletePendingBySpaceIdPhysically(spaceId);
+        // 软删空间内图片（不强制清 COS）
+        pictureMapper.delete(new LambdaQueryWrapper<Picture>()
+                .eq(Picture::getSpaceId, spaceId));
     }
 
     @Override
@@ -217,11 +226,17 @@ public class SpaceServiceImpl implements SpaceService {
     }
 
     @Override
-    public void requireCreator(Long spaceId, Long userId) {
+    public SpaceMember requireRoleAtLeast(Long spaceId, Long userId, String minRole) {
         SpaceMember member = requireMember(spaceId, userId);
-        if (!SpaceRole.CREATOR.equals(member.getRole())) {
-            throw new BusinessException(ErrorCode.NO_AUTH, "仅创建者可操作");
+        if (!SpaceRole.atLeast(member.getRole(), minRole)) {
+            throw new BusinessException(ErrorCode.NO_AUTH, "权限不足");
         }
+        return member;
+    }
+
+    @Override
+    public void requireCreator(Long spaceId, Long userId) {
+        requireRoleAtLeast(spaceId, userId, SpaceRole.CREATOR);
     }
 
     @Override

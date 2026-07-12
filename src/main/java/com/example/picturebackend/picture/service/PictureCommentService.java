@@ -9,9 +9,9 @@ public interface PictureCommentService {
 
     PictureCommentVO addComment(Long pictureId, PictureCommentAddRequest request, Long userId);
 
-    IPage<PictureCommentVO> pageRootComments(Long pictureId, PictureCommentQueryRequest request);
+    IPage<PictureCommentVO> pageRootComments(Long pictureId, PictureCommentQueryRequest request, Long userId);
 
-    IPage<PictureCommentVO> pageReplies(Long rootId, PictureCommentQueryRequest request);
+    IPage<PictureCommentVO> pageReplies(Long rootId, PictureCommentQueryRequest request, Long userId);
 
     void deleteComment(Long commentId, Long userId);
 }

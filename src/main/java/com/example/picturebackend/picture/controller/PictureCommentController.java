@@ -38,15 +38,19 @@ public class PictureCommentController {
 
     @GetMapping("/{pictureId}/comments")
     public BaseResponse<IPage<PictureCommentVO>> pageRootComments(@PathVariable Long pictureId,
-                                                                  PictureCommentQueryRequest request) {
-        IPage<PictureCommentVO> page = pictureCommentService.pageRootComments(pictureId, request);
+                                                                  PictureCommentQueryRequest request,
+                                                                  HttpServletRequest httpRequest) {
+        Long userId = (Long) httpRequest.getAttribute(UserConstant.CURRENT_USER_ID_ATTR);
+        IPage<PictureCommentVO> page = pictureCommentService.pageRootComments(pictureId, request, userId);
         return ResultUtils.success(page);
     }
 
     @GetMapping("/comment/{rootId}/replies")
     public BaseResponse<IPage<PictureCommentVO>> pageReplies(@PathVariable Long rootId,
-                                                             PictureCommentQueryRequest request) {
-        IPage<PictureCommentVO> page = pictureCommentService.pageReplies(rootId, request);
+                                                             PictureCommentQueryRequest request,
+                                                             HttpServletRequest httpRequest) {
+        Long userId = (Long) httpRequest.getAttribute(UserConstant.CURRENT_USER_ID_ATTR);
+        IPage<PictureCommentVO> page = pictureCommentService.pageReplies(rootId, request, userId);
         return ResultUtils.success(page);
     }
 
