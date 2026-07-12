@@ -6,9 +6,10 @@ import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
 
 /**
- * 从请求头解析登录态。校验失败时返回 null，供强制鉴权与可选鉴权共用。
+ * 从请求头或原始 token 解析登录态。校验失败时返回 null，供强制鉴权、可选鉴权与 WebSocket 握手共用。
  */
 @Component
 public class AuthTokenResolver {
@@ -37,9 +38,17 @@ public class AuthTokenResolver {
             return null;
         }
         String token = auth.substring(prefix.length()).trim();
-        if (token.isEmpty()) {
+        return resolveToken(token);
+    }
+
+    /**
+     * 校验原始 JWT（如 WebSocket query 参数），失败返回 null。
+     */
+    public AuthContext resolveToken(String token) {
+        if (!StringUtils.hasText(token)) {
             return null;
         }
+        token = token.trim();
 
         Boolean blacklisted = redisTemplate.hasKey(UserConstant.JWT_BLACKLIST_KEY_PREFIX + token);
         if (Boolean.TRUE.equals(blacklisted)) {

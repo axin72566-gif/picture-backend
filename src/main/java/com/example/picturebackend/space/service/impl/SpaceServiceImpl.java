@@ -11,9 +11,11 @@ import com.example.picturebackend.picture.mapper.PictureMapper;
 import com.example.picturebackend.space.constant.SpaceRole;
 import com.example.picturebackend.space.entity.Space;
 import com.example.picturebackend.space.entity.SpaceMember;
+import com.example.picturebackend.space.entity.SpaceMessage;
 import com.example.picturebackend.space.mapper.SpaceInviteMapper;
 import com.example.picturebackend.space.mapper.SpaceMapper;
 import com.example.picturebackend.space.mapper.SpaceMemberMapper;
+import com.example.picturebackend.space.mapper.SpaceMessageMapper;
 import com.example.picturebackend.space.model.converter.SpaceConverter;
 import com.example.picturebackend.space.model.dto.SpaceCreateRequest;
 import com.example.picturebackend.space.model.dto.SpaceUpdateRequest;
@@ -45,14 +47,18 @@ public class SpaceServiceImpl implements SpaceService {
 
     private final PictureMapper pictureMapper;
 
+    private final SpaceMessageMapper spaceMessageMapper;
+
     public SpaceServiceImpl(SpaceMapper spaceMapper,
                             SpaceMemberMapper spaceMemberMapper,
                             SpaceInviteMapper spaceInviteMapper,
-                            PictureMapper pictureMapper) {
+                            PictureMapper pictureMapper,
+                            SpaceMessageMapper spaceMessageMapper) {
         this.spaceMapper = spaceMapper;
         this.spaceMemberMapper = spaceMemberMapper;
         this.spaceInviteMapper = spaceInviteMapper;
         this.pictureMapper = pictureMapper;
+        this.spaceMessageMapper = spaceMessageMapper;
     }
 
     @Override
@@ -142,6 +148,9 @@ public class SpaceServiceImpl implements SpaceService {
         // 软删空间内图片（不强制清 COS）
         pictureMapper.delete(new LambdaQueryWrapper<Picture>()
                 .eq(Picture::getSpaceId, spaceId));
+        // 软删空间群聊消息
+        spaceMessageMapper.delete(new LambdaQueryWrapper<SpaceMessage>()
+                .eq(SpaceMessage::getSpaceId, spaceId));
     }
 
     @Override

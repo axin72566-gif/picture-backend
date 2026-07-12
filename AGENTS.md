@@ -68,7 +68,14 @@ Auth-required: `POST /api/picture/{id}/like`, `DELETE /api/picture/{id}/like`。
 退出/踢出成员使用**物理删除**（避免软删除占用 `uk_space_user`）。  
 邀请：创建者发起，`userId` 或 `userAccount` 二选一（都传以 `userId` 为准）；待同意后方可加入；邀请角色仅 `EDITOR` / `VIEWER`。  
 通知类型 `SPACE_INVITE`；`notification.spaceId` 可空，供深链。取消邀请 / 拒绝 / 解散不删历史通知。  
-解散：软删 `space`，物理清成员与 `PENDING` 邀请，软删该空间下图片（不强制清 COS）。
+解散：软删 `space`，物理清成员与 `PENDING` 邀请，软删该空间下图片（不强制清 COS），软删该空间群聊消息。
+
+### 空间群聊
+`space_message` 表存储空间群聊（camelCase 列：`id`、`spaceId`、`userId`、`content`、`replyToId`、`createTime`、`updateTime`、`isDelete`）。见 `sql/space_message.sql`。  
+每空间一个聊天室；纯文本（最长 500）、单层回复（`replyToId`）、软删。VIEWER+ 可读可发、可删自己的消息；CREATOR 可删任意。删除不级联子回复；父消息已删时 `replyTo.deleted=true`。不写站内通知。
+
+Auth-required：`GET|POST /api/space/{id}/messages`，`DELETE /api/space/{id}/messages/{messageId}`。  
+实时：STOMP over WebSocket。连接 `ws://host/ws?token=<JWT>`；订阅 `/topic/space.{spaceId}`（SUBSCRIBE 时校验成员）。写操作走 REST，成功后广播 `MESSAGE_NEW` / `MESSAGE_DELETED`。单机内存 broker；踢人不断现有连接（v1）。详见 `plan/space_chat.md`。
 
 ### 图片与角色权限
 `picture.spaceId` 可空：`NULL` = 个人图；非空 = 空间图。见 `sql/picture.sql`、`sql/picture_space_id.sql`。
@@ -80,13 +87,16 @@ Auth-required: `POST /api/picture/{id}/like`, `DELETE /api/picture/{id}/like`。
 | 编辑信息 | 仅上传者 | 否 | 是 | 是 |
 | 删除 | 仅上传者 | 否 | 否 | 是 |
 | 成员/邀请/解散 | — | 否 | 否 | 是 |
+| 群聊读/发 | — | 是 | 是 | 是 |
+| 群聊删自己的 | — | 是 | 是 | 是 |
+| 群聊删他人 | — | 否 | 否 | 是 |
 
-公开图库 `GET /api/picture/page` 仅个人图。空间图点赞/评论须为成员（VIEWER+）。  
+公开图库 `GET /api/picture/page` 仅个人图。空间图点赞/评论须为成员（VIEWER+）。
 上传：`POST /api/picture/upload` 可选 `spaceId`；空间图列表：`GET /api/space/{id}/pictures`。
 
 Auth-required（均需登录）：  
 `POST /api/space`，`GET /api/space/my`，`GET|PUT|DELETE /api/space/{id}`，  
-`GET /api/space/{id}/pictures`，  
+`GET /api/space/{id}/pictures`，`GET|POST /api/space/{id}/messages`，`DELETE /api/space/{id}/messages/{messageId}`，  
 `GET /api/space/{id}/members`，`PUT /api/space/{id}/members/{userId}/role`，`DELETE /api/space/{id}/members/{userId}`，`DELETE /api/space/{id}/members/me`，  
 `POST|GET /api/space/{id}/invites`，`GET /api/space/invites/pending`，  
 `POST /api/space/invites/{inviteId}/accept|reject`，`DELETE /api/space/invites/{inviteId}`。
