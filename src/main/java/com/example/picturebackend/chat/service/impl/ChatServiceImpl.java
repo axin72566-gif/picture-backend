@@ -23,6 +23,7 @@ import com.example.picturebackend.chat.model.vo.ChatMessageVO;
 import com.example.picturebackend.chat.model.vo.ConversationVO;
 import com.example.picturebackend.chat.service.ChatService;
 import com.example.picturebackend.chat.service.ConversationLifecycleService;
+import com.example.picturebackend.chat.service.SensitiveWordService;
 import com.example.picturebackend.common.ErrorCode;
 import com.example.picturebackend.common.PageRequest;
 import com.example.picturebackend.config.CosProperties;
@@ -100,6 +101,8 @@ public class ChatServiceImpl implements ChatService {
 
     private final NotificationService notificationService;
 
+    private final SensitiveWordService sensitiveWordService;
+
     private final COSClient cosClient;
 
     private final CosProperties cosProperties;
@@ -114,6 +117,7 @@ public class ChatServiceImpl implements ChatService {
                            ConversationLifecycleService conversationLifecycleService,
                            ChatEventPublisher chatEventPublisher,
                            NotificationService notificationService,
+                           SensitiveWordService sensitiveWordService,
                            COSClient cosClient,
                            CosProperties cosProperties) {
         this.conversationMapper = conversationMapper;
@@ -126,6 +130,7 @@ public class ChatServiceImpl implements ChatService {
         this.conversationLifecycleService = conversationLifecycleService;
         this.chatEventPublisher = chatEventPublisher;
         this.notificationService = notificationService;
+        this.sensitiveWordService = sensitiveWordService;
         this.cosClient = cosClient;
         this.cosProperties = cosProperties;
     }
@@ -266,6 +271,7 @@ public class ChatServiceImpl implements ChatService {
         if (content.length() > MAX_CONTENT_LENGTH) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR, "消息内容不能超过 500 个字符");
         }
+        sensitiveWordService.assertCleanOrBlock(conversationId, userId, ChatMessageType.TEXT, content);
 
         String clientMsgId = normalizeClientMsgId(request.getClientMsgId());
         ChatMessageVO existingVo = findExistingByClientMsgId(userId, clientMsgId);
@@ -314,6 +320,9 @@ public class ChatServiceImpl implements ChatService {
         String captionText = caption == null ? "" : caption.trim();
         if (captionText.length() > MAX_CONTENT_LENGTH) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR, "配文不能超过 500 个字符");
+        }
+        if (StringUtils.hasText(captionText)) {
+            sensitiveWordService.assertCleanOrBlock(conversationId, userId, ChatMessageType.IMAGE, captionText);
         }
 
         String clientMsgId = normalizeClientMsgId(clientMsgIdRaw);

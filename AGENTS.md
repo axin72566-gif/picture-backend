@@ -70,17 +70,19 @@ Auth-required: `POST /api/picture/{id}/like`, `DELETE /api/picture/{id}/like`。
 通知类型 `SPACE_INVITE`；`notification.spaceId` 可空，供深链。取消邀请 / 拒绝 / 解散不删历史通知。  
 解散：软删 `space`，物理清成员与 `PENDING` 邀请，软删该空间下图片（不强制清 COS），并拆除对应聊天会话。
 
-### 企业 IM（P1–P3）
+### 企业 IM（P1–P4，路线图完结）
 会话模型：`conversation` / `conversation_member` / `chat_message`（见 `sql/conversation.sql` 等；迁移脚本 `sql/migrate_space_chat_to_conversation.sql`）。  
 `SPACE` 会话与空间 1:1；`DM` 私聊一对用户至多一个会话，唯一性由 `conversation_dm_pair`（`sql/conversation_dm_pair.sql`）保证。  
 消息类型 `TEXT` / `IMAGE`（`sql/chat_message_p3.sql`）；聊天图走 COS `chat/...` 前缀，不入库 `picture`。  
 @ 提及：`chat_message_mention` + 通知 `CHAT_MENTION`（`sql/chat_message_mention.sql`）。  
+治理（P4）：`sensitive_word` + Redis `chat:sensitive:words`；发送文本/配文命中则拦截并写 `chat_moderation_log`（`sql/sensitive_word.sql`、`sql/chat_moderation_log.sql`）。删除敏感词使用**物理删除**（避免占用 `uk_word`）。  
+Admin（`userRole=admin`）：`GET|POST /api/admin/sensitive-words`，`PUT|DELETE /api/admin/sensitive-words/{id}`，`GET /api/admin/chat/moderation-logs`。  
 成员水位 `lastReadMessageId`；未读 = 他人消息且 id > 水位。  
 Auth：`GET /api/chat/conversations`，`GET /api/chat/conversations/by-space/{spaceId}`，`POST /api/chat/conversations/dm`，`GET /api/chat/conversations/{id}/members`，`GET|POST /api/chat/conversations/{id}/messages`（支持 `sinceId`），`POST .../messages/image`，`PUT .../read`，`DELETE .../messages/{messageId}`。  
 `ConversationVO`：SPACE 含 `spaceId`/`spaceName`/`title`；DM 含 `peer`/`title`。DM 删消息仅本人；SPACE CREATOR 可删他人。  
 旧 `/api/space/{id}/messages*` 委托到 ChatService。  
 实时：登录后全局 STOMP `/ws?token=`，订阅 `/user/queue/chat`；Redis channel `chat.events` 跨实例扇出。事件：`MESSAGE_NEW` / `MESSAGE_DELETED` / `CONVERSATION_UPDATED` / `CONVERSATION_REMOVED`。  
-发送支持 `clientMsgId` 幂等。详见 `plan/chat_im_p1.md`、`plan/chat_im_p2.md`、`plan/chat_im_p3.md`。
+发送支持 `clientMsgId` 幂等。详见 `plan/chat_im_p1.md`～`plan/chat_im_p4.md`。
 
 ### 空间群聊
 空间详情「群聊」Tab 与 `/messages` 共用会话能力；切 Tab **不断**全局 WS。VIEWER+ 可读可发；CREATOR 可删任意。私聊入口：用户资料页「发消息」、空间成员「私聊」。支持发图与 @ 成员。
@@ -106,6 +108,7 @@ Auth-required（均需登录）：
 `POST /api/space`，`GET /api/space/my`，`GET|PUT|DELETE /api/space/{id}`，  
 `GET /api/space/{id}/pictures`，`GET|POST /api/space/{id}/messages`，`DELETE /api/space/{id}/messages/{messageId}`，  
 `GET|POST /api/chat/conversations/**`，`PUT /api/chat/conversations/{id}/read`，  
+`GET|POST|PUT|DELETE /api/admin/sensitive-words/**`，`GET /api/admin/chat/moderation-logs`，  
 `GET /api/space/{id}/members`，`PUT /api/space/{id}/members/{userId}/role`，`DELETE /api/space/{id}/members/{userId}`，`DELETE /api/space/{id}/members/me`，  
 `POST|GET /api/space/{id}/invites`，`GET /api/space/invites/pending`，  
 `POST /api/space/invites/{inviteId}/accept|reject`，`DELETE /api/space/invites/{inviteId}`。
