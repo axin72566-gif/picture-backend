@@ -11,7 +11,8 @@ import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
         "com.example.picturebackend.user.mapper",
         "com.example.picturebackend.picture.mapper",
         "com.example.picturebackend.notification.mapper",
-        "com.example.picturebackend.space.mapper"
+        "com.example.picturebackend.space.mapper",
+        "com.example.picturebackend.chat.mapper"
 })
 public class PictureBackendApplication {
 

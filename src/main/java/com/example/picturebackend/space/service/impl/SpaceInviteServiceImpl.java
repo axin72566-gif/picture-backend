@@ -3,6 +3,7 @@ package com.example.picturebackend.space.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.example.picturebackend.chat.service.ConversationLifecycleService;
 import com.example.picturebackend.common.ErrorCode;
 import com.example.picturebackend.common.PageRequest;
 import com.example.picturebackend.exception.BusinessException;
@@ -52,18 +53,22 @@ public class SpaceInviteServiceImpl implements SpaceInviteService {
 
     private final NotificationService notificationService;
 
+    private final ConversationLifecycleService conversationLifecycleService;
+
     public SpaceInviteServiceImpl(SpaceInviteMapper spaceInviteMapper,
                                   SpaceMemberMapper spaceMemberMapper,
                                   SpaceMapper spaceMapper,
                                   UserMapper userMapper,
                                   SpaceService spaceService,
-                                  NotificationService notificationService) {
+                                  NotificationService notificationService,
+                                  ConversationLifecycleService conversationLifecycleService) {
         this.spaceInviteMapper = spaceInviteMapper;
         this.spaceMemberMapper = spaceMemberMapper;
         this.spaceMapper = spaceMapper;
         this.userMapper = userMapper;
         this.spaceService = spaceService;
         this.notificationService = notificationService;
+        this.conversationLifecycleService = conversationLifecycleService;
     }
 
     @Override
@@ -167,6 +172,7 @@ public class SpaceInviteServiceImpl implements SpaceInviteService {
         if (memberRows <= 0) {
             throw new BusinessException(ErrorCode.SERVER_ERROR, "加入空间失败");
         }
+        conversationLifecycleService.addMember(invite.getSpaceId(), userId);
 
         invite.setStatus(SpaceInviteStatus.ACCEPTED);
         int rows = spaceInviteMapper.updateById(invite);

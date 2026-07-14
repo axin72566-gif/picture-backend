@@ -1,7 +1,7 @@
 package com.example.picturebackend.websocket;
 
+import com.example.picturebackend.chat.constant.ChatConstant;
 import com.example.picturebackend.interceptor.AuthTokenResolver;
-import com.example.picturebackend.space.constant.SpaceChatConstant;
 import org.springframework.http.server.ServerHttpRequest;
 import org.springframework.http.server.ServerHttpResponse;
 import org.springframework.http.server.ServletServerHttpRequest;
@@ -12,7 +12,7 @@ import org.springframework.web.socket.server.HandshakeInterceptor;
 import java.util.Map;
 
 /**
- * WebSocket 握手：从 query token 校验登录态，将 userId 写入 session attributes。
+ * WebSocket 握手：校验 JWT，写入 session userId，并供后续 STOMP Principal 使用。
  */
 @Component
 public class SpaceChatHandshakeInterceptor implements HandshakeInterceptor {
@@ -36,7 +36,8 @@ public class SpaceChatHandshakeInterceptor implements HandshakeInterceptor {
         if (context == null) {
             return false;
         }
-        attributes.put(SpaceChatConstant.WS_USER_ID_ATTR, context.userId());
+        attributes.put(ChatConstant.WS_USER_ID_ATTR, context.userId());
+        attributes.put(SpaceChatConstantCompat.WS_USER_ID_ATTR, context.userId());
         return true;
     }
 
@@ -46,5 +47,10 @@ public class SpaceChatHandshakeInterceptor implements HandshakeInterceptor {
                                WebSocketHandler wsHandler,
                                Exception exception) {
         // no-op
+    }
+
+    /** 兼容旧 SpaceChatConstant 键名 */
+    private static final class SpaceChatConstantCompat {
+        static final String WS_USER_ID_ATTR = "wsUserId";
     }
 }

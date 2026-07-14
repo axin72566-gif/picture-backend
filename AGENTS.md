@@ -68,14 +68,19 @@ Auth-required: `POST /api/picture/{id}/like`, `DELETE /api/picture/{id}/like`。
 退出/踢出成员使用**物理删除**（避免软删除占用 `uk_space_user`）。  
 邀请：创建者发起，`userId` 或 `userAccount` 二选一（都传以 `userId` 为准）；待同意后方可加入；邀请角色仅 `EDITOR` / `VIEWER`。  
 通知类型 `SPACE_INVITE`；`notification.spaceId` 可空，供深链。取消邀请 / 拒绝 / 解散不删历史通知。  
-解散：软删 `space`，物理清成员与 `PENDING` 邀请，软删该空间下图片（不强制清 COS），软删该空间群聊消息。
+解散：软删 `space`，物理清成员与 `PENDING` 邀请，软删该空间下图片（不强制清 COS），并拆除对应聊天会话。
+
+### 企业 IM（P1 地基）
+会话模型：`conversation` / `conversation_member` / `chat_message`（见 `sql/conversation.sql` 等；迁移脚本 `sql/migrate_space_chat_to_conversation.sql`）。  
+`SPACE` 会话与空间 1:1；表结构预留 `DM`，P1 不开私聊。  
+成员水位 `lastReadMessageId`；未读 = 他人消息且 id > 水位。  
+Auth：`GET /api/chat/conversations`，`GET /api/chat/conversations/by-space/{spaceId}`，`GET|POST /api/chat/conversations/{id}/messages`（支持 `sinceId`），`PUT .../read`，`DELETE .../messages/{messageId}`。  
+旧 `/api/space/{id}/messages*` 委托到 ChatService。  
+实时：登录后全局 STOMP `/ws?token=`，订阅 `/user/queue/chat`；Redis channel `chat.events` 跨实例扇出。事件：`MESSAGE_NEW` / `MESSAGE_DELETED` / `CONVERSATION_UPDATED` / `CONVERSATION_REMOVED`。  
+发送支持 `clientMsgId` 幂等。详见 `plan/chat_im_p1.md`。
 
 ### 空间群聊
-`space_message` 表存储空间群聊（camelCase 列：`id`、`spaceId`、`userId`、`content`、`replyToId`、`createTime`、`updateTime`、`isDelete`）。见 `sql/space_message.sql`。  
-每空间一个聊天室；纯文本（最长 500）、单层回复（`replyToId`）、软删。VIEWER+ 可读可发、可删自己的消息；CREATOR 可删任意。删除不级联子回复；父消息已删时 `replyTo.deleted=true`。不写站内通知。
-
-Auth-required：`GET|POST /api/space/{id}/messages`，`DELETE /api/space/{id}/messages/{messageId}`。  
-实时：STOMP over WebSocket。连接 `ws://host/ws?token=<JWT>`；订阅 `/topic/space.{spaceId}`（SUBSCRIBE 时校验成员）。写操作走 REST，成功后广播 `MESSAGE_NEW` / `MESSAGE_DELETED`。单机内存 broker；踢人不断现有连接（v1）。详见 `plan/space_chat.md`。
+空间详情「群聊」Tab 与 `/messages` 共用会话能力；切 Tab **不断**全局 WS。VIEWER+ 可读可发；CREATOR 可删任意。
 
 ### 图片与角色权限
 `picture.spaceId` 可空：`NULL` = 个人图；非空 = 空间图。见 `sql/picture.sql`、`sql/picture_space_id.sql`。
@@ -97,6 +102,7 @@ Auth-required：`GET|POST /api/space/{id}/messages`，`DELETE /api/space/{id}/me
 Auth-required（均需登录）：  
 `POST /api/space`，`GET /api/space/my`，`GET|PUT|DELETE /api/space/{id}`，  
 `GET /api/space/{id}/pictures`，`GET|POST /api/space/{id}/messages`，`DELETE /api/space/{id}/messages/{messageId}`，  
+`GET|POST /api/chat/conversations/**`，`PUT /api/chat/conversations/{id}/read`，  
 `GET /api/space/{id}/members`，`PUT /api/space/{id}/members/{userId}/role`，`DELETE /api/space/{id}/members/{userId}`，`DELETE /api/space/{id}/members/me`，  
 `POST|GET /api/space/{id}/invites`，`GET /api/space/invites/pending`，  
 `POST /api/space/invites/{inviteId}/accept|reject`，`DELETE /api/space/invites/{inviteId}`。

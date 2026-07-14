@@ -3,6 +3,7 @@ package com.example.picturebackend.space.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.example.picturebackend.chat.service.ConversationLifecycleService;
 import com.example.picturebackend.common.ErrorCode;
 import com.example.picturebackend.common.PageRequest;
 import com.example.picturebackend.exception.BusinessException;
@@ -11,11 +12,9 @@ import com.example.picturebackend.picture.mapper.PictureMapper;
 import com.example.picturebackend.space.constant.SpaceRole;
 import com.example.picturebackend.space.entity.Space;
 import com.example.picturebackend.space.entity.SpaceMember;
-import com.example.picturebackend.space.entity.SpaceMessage;
 import com.example.picturebackend.space.mapper.SpaceInviteMapper;
 import com.example.picturebackend.space.mapper.SpaceMapper;
 import com.example.picturebackend.space.mapper.SpaceMemberMapper;
-import com.example.picturebackend.space.mapper.SpaceMessageMapper;
 import com.example.picturebackend.space.model.converter.SpaceConverter;
 import com.example.picturebackend.space.model.dto.SpaceCreateRequest;
 import com.example.picturebackend.space.model.dto.SpaceUpdateRequest;
@@ -47,18 +46,18 @@ public class SpaceServiceImpl implements SpaceService {
 
     private final PictureMapper pictureMapper;
 
-    private final SpaceMessageMapper spaceMessageMapper;
+    private final ConversationLifecycleService conversationLifecycleService;
 
     public SpaceServiceImpl(SpaceMapper spaceMapper,
                             SpaceMemberMapper spaceMemberMapper,
                             SpaceInviteMapper spaceInviteMapper,
                             PictureMapper pictureMapper,
-                            SpaceMessageMapper spaceMessageMapper) {
+                            ConversationLifecycleService conversationLifecycleService) {
         this.spaceMapper = spaceMapper;
         this.spaceMemberMapper = spaceMemberMapper;
         this.spaceInviteMapper = spaceInviteMapper;
         this.pictureMapper = pictureMapper;
-        this.spaceMessageMapper = spaceMessageMapper;
+        this.conversationLifecycleService = conversationLifecycleService;
     }
 
     @Override
@@ -93,6 +92,7 @@ public class SpaceServiceImpl implements SpaceService {
         if (memberRows <= 0) {
             throw new BusinessException(ErrorCode.SERVER_ERROR, "创建空间失败");
         }
+        conversationLifecycleService.createSpaceConversation(space.getId(), ownerId);
 
         SpaceVO vo = SpaceConverter.toVO(space);
         vo.setMyRole(SpaceRole.CREATOR);
@@ -148,9 +148,7 @@ public class SpaceServiceImpl implements SpaceService {
         // 软删空间内图片（不强制清 COS）
         pictureMapper.delete(new LambdaQueryWrapper<Picture>()
                 .eq(Picture::getSpaceId, spaceId));
-        // 软删空间群聊消息
-        spaceMessageMapper.delete(new LambdaQueryWrapper<SpaceMessage>()
-                .eq(SpaceMessage::getSpaceId, spaceId));
+        conversationLifecycleService.dissolveSpaceConversation(spaceId);
     }
 
     @Override

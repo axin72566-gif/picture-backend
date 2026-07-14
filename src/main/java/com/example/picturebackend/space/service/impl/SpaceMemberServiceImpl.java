@@ -3,6 +3,7 @@ package com.example.picturebackend.space.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.example.picturebackend.chat.service.ConversationLifecycleService;
 import com.example.picturebackend.common.ErrorCode;
 import com.example.picturebackend.common.PageRequest;
 import com.example.picturebackend.exception.BusinessException;
@@ -36,12 +37,16 @@ public class SpaceMemberServiceImpl implements SpaceMemberService {
 
     private final SpaceService spaceService;
 
+    private final ConversationLifecycleService conversationLifecycleService;
+
     public SpaceMemberServiceImpl(SpaceMemberMapper spaceMemberMapper,
                                   UserMapper userMapper,
-                                  SpaceService spaceService) {
+                                  SpaceService spaceService,
+                                  ConversationLifecycleService conversationLifecycleService) {
         this.spaceMemberMapper = spaceMemberMapper;
         this.userMapper = userMapper;
         this.spaceService = spaceService;
+        this.conversationLifecycleService = conversationLifecycleService;
     }
 
     @Override
@@ -100,6 +105,7 @@ public class SpaceMemberServiceImpl implements SpaceMemberService {
         if (rows <= 0) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR, "成员不存在");
         }
+        conversationLifecycleService.removeMember(spaceId, targetUserId);
     }
 
     @Override
@@ -113,6 +119,7 @@ public class SpaceMemberServiceImpl implements SpaceMemberService {
         if (rows <= 0) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR, "未加入该空间");
         }
+        conversationLifecycleService.removeMember(spaceId, userId);
     }
 
     private IPage<SpaceMemberVO> toVoPage(Page<SpaceMember> result) {
