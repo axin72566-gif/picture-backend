@@ -5,6 +5,7 @@ import lombok.Data;
 
 import java.io.Serializable;
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Data
 public class ChatMessageVO implements Serializable {
@@ -15,11 +16,25 @@ public class ChatMessageVO implements Serializable {
 
     private Long conversationId;
 
+    private String messageType;
+
     private String content;
+
+    private String mediaUrl;
+
+    private Integer mediaWidth;
+
+    private Integer mediaHeight;
+
+    private Long mediaSize;
+
+    private String mediaContentType;
 
     private LocalDateTime createTime;
 
     private UserVO sender;
 
     private ChatMessageReplyToVO replyTo;
+
+    private List<UserVO> mentions;
 }

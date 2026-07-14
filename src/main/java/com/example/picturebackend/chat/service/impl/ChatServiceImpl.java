@@ -3,12 +3,15 @@ package com.example.picturebackend.chat.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.example.picturebackend.chat.constant.ChatMessageType;
 import com.example.picturebackend.chat.constant.ConversationType;
 import com.example.picturebackend.chat.entity.ChatMessage;
+import com.example.picturebackend.chat.entity.ChatMessageMention;
 import com.example.picturebackend.chat.entity.Conversation;
 import com.example.picturebackend.chat.entity.ConversationMember;
 import com.example.picturebackend.chat.event.ChatEventPublisher;
 import com.example.picturebackend.chat.mapper.ChatMessageMapper;
+import com.example.picturebackend.chat.mapper.ChatMessageMentionMapper;
 import com.example.picturebackend.chat.mapper.ConversationMapper;
 import com.example.picturebackend.chat.mapper.ConversationMemberMapper;
 import com.example.picturebackend.chat.model.converter.ChatMessageConverter;
@@ -22,7 +25,10 @@ import com.example.picturebackend.chat.service.ChatService;
 import com.example.picturebackend.chat.service.ConversationLifecycleService;
 import com.example.picturebackend.common.ErrorCode;
 import com.example.picturebackend.common.PageRequest;
+import com.example.picturebackend.config.CosProperties;
 import com.example.picturebackend.exception.BusinessException;
+import com.example.picturebackend.notification.constant.NotificationType;
+import com.example.picturebackend.notification.service.NotificationService;
 import com.example.picturebackend.space.constant.SpaceRole;
 import com.example.picturebackend.space.entity.Space;
 import com.example.picturebackend.space.entity.SpaceMember;
@@ -32,20 +38,33 @@ import com.example.picturebackend.user.entity.User;
 import com.example.picturebackend.user.mapper.UserMapper;
 import com.example.picturebackend.user.model.converter.UserConverter;
 import com.example.picturebackend.user.model.vo.UserVO;
+import com.qcloud.cos.COSClient;
+import com.qcloud.cos.model.ObjectMetadata;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
+import org.springframework.web.multipart.MultipartFile;
 
+import javax.imageio.ImageIO;
+import java.awt.image.BufferedImage;
+import java.io.IOException;
+import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 public class ChatServiceImpl implements ChatService {
 
@@ -53,11 +72,21 @@ public class ChatServiceImpl implements ChatService {
 
     private static final int DEFAULT_SINCE_LIMIT = 100;
 
+    private static final int MAX_MENTIONS = 20;
+
+    private static final long MAX_IMAGE_SIZE = 10 * 1024 * 1024L;
+
+    private static final List<String> ALLOWED_IMAGE_TYPES = List.of(
+            "image/jpeg", "image/png", "image/gif", "image/webp"
+    );
+
     private final ConversationMapper conversationMapper;
 
     private final ConversationMemberMapper conversationMemberMapper;
 
     private final ChatMessageMapper chatMessageMapper;
+
+    private final ChatMessageMentionMapper chatMessageMentionMapper;
 
     private final SpaceMapper spaceMapper;
 
@@ -69,22 +98,36 @@ public class ChatServiceImpl implements ChatService {
 
     private final ChatEventPublisher chatEventPublisher;
 
+    private final NotificationService notificationService;
+
+    private final COSClient cosClient;
+
+    private final CosProperties cosProperties;
+
     public ChatServiceImpl(ConversationMapper conversationMapper,
                            ConversationMemberMapper conversationMemberMapper,
                            ChatMessageMapper chatMessageMapper,
+                           ChatMessageMentionMapper chatMessageMentionMapper,
                            SpaceMapper spaceMapper,
                            UserMapper userMapper,
                            SpaceService spaceService,
                            ConversationLifecycleService conversationLifecycleService,
-                           ChatEventPublisher chatEventPublisher) {
+                           ChatEventPublisher chatEventPublisher,
+                           NotificationService notificationService,
+                           COSClient cosClient,
+                           CosProperties cosProperties) {
         this.conversationMapper = conversationMapper;
         this.conversationMemberMapper = conversationMemberMapper;
         this.chatMessageMapper = chatMessageMapper;
+        this.chatMessageMentionMapper = chatMessageMentionMapper;
         this.spaceMapper = spaceMapper;
         this.userMapper = userMapper;
         this.spaceService = spaceService;
         this.conversationLifecycleService = conversationLifecycleService;
         this.chatEventPublisher = chatEventPublisher;
+        this.notificationService = notificationService;
+        this.cosClient = cosClient;
+        this.cosProperties = cosProperties;
     }
 
     @Override
@@ -162,13 +205,23 @@ public class ChatServiceImpl implements ChatService {
         Map<Long, UserVO> peerMap = loadDmPeerMap(List.of(conversation), userId);
         ConversationVO vo = toConversationVO(conversation, member, Collections.emptyMap(), peerMap, userId);
         if (result.created()) {
-            // 双方列表刷新（创建者也推，便于多端同步）
             chatEventPublisher.publish(ChatEvent.conversationUpdated(
                     conversation.getId(), vo.getUnreadCount(), vo.getLastMessage(), userId));
             chatEventPublisher.publish(ChatEvent.conversationUpdated(
                     conversation.getId(), 0L, null, peerUserId));
         }
         return vo;
+    }
+
+    @Override
+    public List<UserVO> listConversationMembers(Long conversationId, Long userId) {
+        requireMember(conversationId, userId);
+        List<Long> memberIds = conversationMemberMapper.selectUserIdsByConversationId(conversationId);
+        if (memberIds == null || memberIds.isEmpty()) {
+            return List.of();
+        }
+        Map<Long, UserVO> map = loadUserVOMap(new HashSet<>(memberIds));
+        return memberIds.stream().map(map::get).filter(Objects::nonNull).toList();
     }
 
     @Override
@@ -214,72 +267,108 @@ public class ChatServiceImpl implements ChatService {
             throw new BusinessException(ErrorCode.PARAMS_ERROR, "消息内容不能超过 500 个字符");
         }
 
-        String clientMsgId = StringUtils.hasText(request.getClientMsgId()) ? request.getClientMsgId().trim() : null;
-        if (clientMsgId != null) {
-            ChatMessage existing = chatMessageMapper.selectOne(new LambdaQueryWrapper<ChatMessage>()
-                    .eq(ChatMessage::getSenderId, userId)
-                    .eq(ChatMessage::getClientMsgId, clientMsgId)
-                    .last("LIMIT 1"));
-            if (existing != null) {
-                return toVoList(List.of(existing)).getFirst();
-            }
+        String clientMsgId = normalizeClientMsgId(request.getClientMsgId());
+        ChatMessageVO existingVo = findExistingByClientMsgId(userId, clientMsgId);
+        if (existingVo != null) {
+            return existingVo;
         }
 
-        ChatMessage replyTo = null;
-        Long replyToId = request.getReplyToId();
-        if (replyToId != null) {
-            if (replyToId <= 0) {
-                throw new BusinessException(ErrorCode.PARAMS_ERROR, "回复消息 ID 无效");
-            }
-            replyTo = chatMessageMapper.selectById(replyToId);
-            if (replyTo == null || !Objects.equals(replyTo.getConversationId(), conversationId)) {
-                throw new BusinessException(ErrorCode.PARAMS_ERROR, "被回复的消息不存在");
-            }
-        }
+        Long replyToId = resolveReplyToId(conversationId, request.getReplyToId());
+        List<Long> mentionIds = resolveMentionUserIds(conversationId, userId, request.getMentionUserIds());
 
         ChatMessage message = new ChatMessage();
         message.setConversationId(conversationId);
         message.setSenderId(userId);
+        message.setMessageType(ChatMessageType.TEXT);
         message.setContent(content);
-        message.setReplyToId(replyTo != null ? replyTo.getId() : null);
+        message.setReplyToId(replyToId);
         message.setClientMsgId(clientMsgId);
 
+        insertMessage(message, userId, clientMsgId);
+        saveMentionsAndNotify(message, mentionIds, userId);
+        return publishNewMessage(message, userId);
+    }
+
+    @Override
+    @Transactional
+    public ChatMessageVO sendImageMessage(Long conversationId, MultipartFile file, String caption, Long replyToId,
+                                          String clientMsgIdRaw, List<Long> mentionUserIds, Long userId) {
+        requireMember(conversationId, userId);
+        if (file == null || file.isEmpty()) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "图片不能为空");
+        }
+
+        String contentType = file.getContentType();
+        if (contentType == null || !ALLOWED_IMAGE_TYPES.contains(contentType)) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "文件类型不支持，仅支持 jpg/png/gif/webp");
+        }
+        long size = file.getSize();
+        if (size > MAX_IMAGE_SIZE) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "文件大小不能超过 10MB");
+        }
+        String originalName = file.getOriginalFilename();
+        if (originalName == null || originalName.isBlank()) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "文件名不能为空");
+        }
+
+        String captionText = caption == null ? "" : caption.trim();
+        if (captionText.length() > MAX_CONTENT_LENGTH) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "配文不能超过 500 个字符");
+        }
+
+        String clientMsgId = normalizeClientMsgId(clientMsgIdRaw);
+        ChatMessageVO existingVo = findExistingByClientMsgId(userId, clientMsgId);
+        if (existingVo != null) {
+            return existingVo;
+        }
+
+        BufferedImage image;
         try {
-            int rows = chatMessageMapper.insert(message);
-            if (rows <= 0 || message.getId() == null) {
-                throw new BusinessException(ErrorCode.SERVER_ERROR, "发送消息失败");
-            }
-        } catch (DuplicateKeyException e) {
-            ChatMessage existing = chatMessageMapper.selectOne(new LambdaQueryWrapper<ChatMessage>()
-                    .eq(ChatMessage::getSenderId, userId)
-                    .eq(ChatMessage::getClientMsgId, clientMsgId)
-                    .last("LIMIT 1"));
-            if (existing != null) {
-                return toVoList(List.of(existing)).getFirst();
-            }
-            throw new BusinessException(ErrorCode.SERVER_ERROR, "发送消息失败");
+            image = ImageIO.read(file.getInputStream());
+        } catch (IOException e) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "无法读取图片文件");
+        }
+        if (image == null) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "文件内容不是有效的图片");
         }
 
-        ChatMessageVO vo = toVoList(List.of(message)).getFirst();
-        List<Long> targets = conversationMemberMapper.selectUserIdsByConversationId(conversationId);
-        chatEventPublisher.publish(ChatEvent.messageNew(conversationId, vo, targets));
-
-        // 同步更新其他成员未读感知：给除发送者外每人推 CONVERSATION_UPDATED
-        for (Long targetId : targets) {
-            if (Objects.equals(targetId, userId)) {
-                continue;
-            }
-            ConversationMember member = conversationMemberMapper.selectOne(new LambdaQueryWrapper<ConversationMember>()
-                    .eq(ConversationMember::getConversationId, conversationId)
-                    .eq(ConversationMember::getUserId, targetId)
-                    .last("LIMIT 1"));
-            long unread = member == null ? 0
-                    : chatMessageMapper.countUnread(conversationId,
-                    member.getLastReadMessageId() == null ? 0L : member.getLastReadMessageId(),
-                    targetId);
-            chatEventPublisher.publish(ChatEvent.conversationUpdated(conversationId, unread, vo, targetId));
+        String ext = "";
+        int dot = originalName.lastIndexOf('.');
+        if (dot > 0) {
+            ext = originalName.substring(dot);
         }
-        return vo;
+        String key = generateChatImageKey(ext);
+        String bucket = cosProperties.getBucket();
+        try {
+            ObjectMetadata metadata = new ObjectMetadata();
+            metadata.setContentLength(size);
+            metadata.setContentType(contentType);
+            cosClient.putObject(bucket, key, file.getInputStream(), metadata);
+        } catch (Exception e) {
+            log.error("聊天图片上传 COS 失败, bucket={}, key={}", bucket, key, e);
+            throw new BusinessException(ErrorCode.SERVER_ERROR, "图片上传失败，请稍后重试");
+        }
+        String url = cosProperties.getBaseUrl() + "/" + key;
+
+        Long resolvedReplyToId = resolveReplyToId(conversationId, replyToId);
+        List<Long> mentionIds = resolveMentionUserIds(conversationId, userId, mentionUserIds);
+
+        ChatMessage message = new ChatMessage();
+        message.setConversationId(conversationId);
+        message.setSenderId(userId);
+        message.setMessageType(ChatMessageType.IMAGE);
+        message.setContent(captionText);
+        message.setMediaUrl(url);
+        message.setMediaWidth(image.getWidth());
+        message.setMediaHeight(image.getHeight());
+        message.setMediaSize(size);
+        message.setMediaContentType(contentType);
+        message.setReplyToId(resolvedReplyToId);
+        message.setClientMsgId(clientMsgId);
+
+        insertMessage(message, userId, clientMsgId);
+        saveMentionsAndNotify(message, mentionIds, userId);
+        return publishNewMessage(message, userId);
     }
 
     @Override
@@ -288,7 +377,7 @@ public class ChatServiceImpl implements ChatService {
         if (messageId == null || messageId <= 0) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR, "消息 ID 不能为空");
         }
-        ConversationMember member = requireMember(conversationId, operatorId);
+        requireMember(conversationId, operatorId);
         ChatMessage message = chatMessageMapper.selectById(messageId);
         if (message == null || !Objects.equals(message.getConversationId(), conversationId)) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR, "消息不存在");
@@ -297,7 +386,6 @@ public class ChatServiceImpl implements ChatService {
         boolean isAuthor = Objects.equals(message.getSenderId(), operatorId);
         Conversation conversation = conversationMapper.selectById(conversationId);
         if (conversation != null && ConversationType.DM.equals(conversation.getType())) {
-            // 私聊仅本人可删
             if (!isAuthor) {
                 throw new BusinessException(ErrorCode.NO_AUTH, "只能删除自己的消息");
             }
@@ -349,6 +437,158 @@ public class ChatServiceImpl implements ChatService {
         return conversation.getId();
     }
 
+    private void insertMessage(ChatMessage message, Long userId, String clientMsgId) {
+        try {
+            int rows = chatMessageMapper.insert(message);
+            if (rows <= 0 || message.getId() == null) {
+                throw new BusinessException(ErrorCode.SERVER_ERROR, "发送消息失败");
+            }
+        } catch (DuplicateKeyException e) {
+            ChatMessage existing = findMessageByClientMsgId(userId, clientMsgId);
+            if (existing != null) {
+                message.setId(existing.getId());
+                return;
+            }
+            throw new BusinessException(ErrorCode.SERVER_ERROR, "发送消息失败");
+        }
+    }
+
+    private ChatMessageVO publishNewMessage(ChatMessage message, Long userId) {
+        // 若幂等命中已有消息，直接返回 VO
+        ChatMessage persisted = chatMessageMapper.selectById(message.getId());
+        if (persisted == null) {
+            persisted = message;
+        }
+        ChatMessageVO vo = toVoList(List.of(persisted)).getFirst();
+        Long conversationId = persisted.getConversationId();
+        List<Long> targets = conversationMemberMapper.selectUserIdsByConversationId(conversationId);
+        chatEventPublisher.publish(ChatEvent.messageNew(conversationId, vo, targets));
+
+        for (Long targetId : targets) {
+            if (Objects.equals(targetId, userId)) {
+                continue;
+            }
+            ConversationMember member = conversationMemberMapper.selectOne(new LambdaQueryWrapper<ConversationMember>()
+                    .eq(ConversationMember::getConversationId, conversationId)
+                    .eq(ConversationMember::getUserId, targetId)
+                    .last("LIMIT 1"));
+            long unread = member == null ? 0
+                    : chatMessageMapper.countUnread(conversationId,
+                    member.getLastReadMessageId() == null ? 0L : member.getLastReadMessageId(),
+                    targetId);
+            chatEventPublisher.publish(ChatEvent.conversationUpdated(conversationId, unread, vo, targetId));
+        }
+        return vo;
+    }
+
+    private void saveMentionsAndNotify(ChatMessage message, List<Long> mentionIds, Long senderId) {
+        if (mentionIds == null || mentionIds.isEmpty() || message.getId() == null) {
+            return;
+        }
+        // 幂等重入时可能已写过 mention，先查再插
+        Long existingCount = chatMessageMentionMapper.selectCount(new LambdaQueryWrapper<ChatMessageMention>()
+                .eq(ChatMessageMention::getMessageId, message.getId()));
+        if (existingCount != null && existingCount > 0) {
+            return;
+        }
+
+        Conversation conversation = conversationMapper.selectById(message.getConversationId());
+        Long spaceId = conversation != null && ConversationType.SPACE.equals(conversation.getType())
+                ? conversation.getSpaceId() : null;
+        String summary = ChatMessageType.IMAGE.equals(message.getMessageType())
+                ? (StringUtils.hasText(message.getContent()) ? message.getContent() : "[图片]")
+                : message.getContent();
+
+        for (Long mentionUserId : mentionIds) {
+            ChatMessageMention mention = new ChatMessageMention();
+            mention.setMessageId(message.getId());
+            mention.setUserId(mentionUserId);
+            chatMessageMentionMapper.insert(mention);
+            notificationService.create(
+                    mentionUserId,
+                    senderId,
+                    NotificationType.CHAT_MENTION,
+                    null,
+                    null,
+                    spaceId,
+                    message.getConversationId(),
+                    summary
+            );
+        }
+    }
+
+    private List<Long> resolveMentionUserIds(Long conversationId, Long senderId, List<Long> rawIds) {
+        if (rawIds == null || rawIds.isEmpty()) {
+            return List.of();
+        }
+        LinkedHashSet<Long> unique = new LinkedHashSet<>();
+        for (Long id : rawIds) {
+            if (id != null && id > 0) {
+                unique.add(id);
+            }
+        }
+        if (unique.isEmpty()) {
+            return List.of();
+        }
+        if (unique.size() > MAX_MENTIONS) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "单条消息最多 @ " + MAX_MENTIONS + " 人");
+        }
+        if (unique.contains(senderId)) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "不能 @ 自己");
+        }
+        Set<Long> memberIds = new HashSet<>(conversationMemberMapper.selectUserIdsByConversationId(conversationId));
+        for (Long id : unique) {
+            if (!memberIds.contains(id)) {
+                throw new BusinessException(ErrorCode.PARAMS_ERROR, "只能 @ 本会话成员");
+            }
+        }
+        return new ArrayList<>(unique);
+    }
+
+    private Long resolveReplyToId(Long conversationId, Long replyToId) {
+        if (replyToId == null) {
+            return null;
+        }
+        if (replyToId <= 0) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "回复消息 ID 无效");
+        }
+        ChatMessage replyTo = chatMessageMapper.selectById(replyToId);
+        if (replyTo == null || !Objects.equals(replyTo.getConversationId(), conversationId)) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "被回复的消息不存在");
+        }
+        return replyTo.getId();
+    }
+
+    private String normalizeClientMsgId(String clientMsgId) {
+        return StringUtils.hasText(clientMsgId) ? clientMsgId.trim() : null;
+    }
+
+    private ChatMessageVO findExistingByClientMsgId(Long userId, String clientMsgId) {
+        ChatMessage existing = findMessageByClientMsgId(userId, clientMsgId);
+        if (existing == null) {
+            return null;
+        }
+        return toVoList(List.of(existing)).getFirst();
+    }
+
+    private ChatMessage findMessageByClientMsgId(Long userId, String clientMsgId) {
+        if (clientMsgId == null) {
+            return null;
+        }
+        return chatMessageMapper.selectOne(new LambdaQueryWrapper<ChatMessage>()
+                .eq(ChatMessage::getSenderId, userId)
+                .eq(ChatMessage::getClientMsgId, clientMsgId)
+                .last("LIMIT 1"));
+    }
+
+    private String generateChatImageKey(String ext) {
+        LocalDate today = LocalDate.now();
+        return String.format("chat/%d/%02d/%02d/%s%s",
+                today.getYear(), today.getMonthValue(), today.getDayOfMonth(),
+                UUID.randomUUID().toString().replace("-", ""),
+                ext);
+    }
+
     private ConversationVO toConversationVO(Conversation conversation,
                                             ConversationMember member,
                                             Map<Long, Space> spaceMap,
@@ -388,9 +628,6 @@ public class ChatServiceImpl implements ChatService {
         return vo;
     }
 
-    /**
-     * 批量解析 DM 会话的对方用户（conversationId -> peer UserVO）。
-     */
     private Map<Long, UserVO> loadDmPeerMap(java.util.Collection<Conversation> conversations, Long userId) {
         if (conversations == null || conversations.isEmpty() || userId == null) {
             return Collections.emptyMap();
@@ -406,7 +643,7 @@ public class ChatServiceImpl implements ChatService {
         List<ConversationMember> dmMembers = conversationMemberMapper.selectList(
                 new LambdaQueryWrapper<ConversationMember>()
                         .in(ConversationMember::getConversationId, dmIds));
-        Map<Long, Long> conversationPeerId = new java.util.HashMap<>();
+        Map<Long, Long> conversationPeerId = new HashMap<>();
         for (ConversationMember m : dmMembers) {
             if (m.getUserId() != null && !Objects.equals(m.getUserId(), userId)) {
                 conversationPeerId.put(m.getConversationId(), m.getUserId());
@@ -416,7 +653,7 @@ public class ChatServiceImpl implements ChatService {
             return Collections.emptyMap();
         }
         Map<Long, UserVO> users = loadUserVOMap(new HashSet<>(conversationPeerId.values()));
-        Map<Long, UserVO> result = new java.util.HashMap<>();
+        Map<Long, UserVO> result = new HashMap<>();
         conversationPeerId.forEach((cid, peerId) -> {
             UserVO peer = users.get(peerId);
             if (peer != null) {
@@ -467,7 +704,9 @@ public class ChatServiceImpl implements ChatService {
         }
         Set<Long> userIds = new HashSet<>();
         Set<Long> replyToIds = new HashSet<>();
+        List<Long> messageIds = new ArrayList<>();
         for (ChatMessage message : messages) {
+            messageIds.add(message.getId());
             if (message.getSenderId() != null) {
                 userIds.add(message.getSenderId());
             }
@@ -484,12 +723,35 @@ public class ChatServiceImpl implements ChatService {
                 userIds.add(reply.getSenderId());
             }
         }
+
+        Map<Long, List<Long>> mentionUserIdsByMessage = new HashMap<>();
+        if (!messageIds.isEmpty()) {
+            List<ChatMessageMention> mentions = chatMessageMentionMapper.selectByMessageIds(messageIds);
+            for (ChatMessageMention mention : mentions) {
+                mentionUserIdsByMessage
+                        .computeIfAbsent(mention.getMessageId(), k -> new ArrayList<>())
+                        .add(mention.getUserId());
+                if (mention.getUserId() != null) {
+                    userIds.add(mention.getUserId());
+                }
+            }
+        }
+
         Map<Long, UserVO> userVOMap = loadUserVOMap(userIds);
         return messages.stream().map(message -> {
             ChatMessageVO vo = ChatMessageConverter.toVO(message);
             vo.setSender(userVOMap.get(message.getSenderId()));
             if (message.getReplyToId() != null) {
                 vo.setReplyTo(buildReplyToVO(replyMap.get(message.getReplyToId()), userVOMap));
+            }
+            List<Long> mentionIds = mentionUserIdsByMessage.getOrDefault(message.getId(), List.of());
+            if (!mentionIds.isEmpty()) {
+                vo.setMentions(mentionIds.stream()
+                        .map(userVOMap::get)
+                        .filter(Objects::nonNull)
+                        .toList());
+            } else {
+                vo.setMentions(List.of());
             }
             return vo;
         }).toList();
@@ -504,6 +766,8 @@ public class ChatServiceImpl implements ChatService {
         replyToVO.setId(reply.getId());
         boolean deleted = Objects.equals(reply.getIsDelete(), 1);
         replyToVO.setDeleted(deleted);
+        replyToVO.setMessageType(StringUtils.hasText(reply.getMessageType())
+                ? reply.getMessageType() : ChatMessageType.TEXT);
         replyToVO.setContent(deleted ? null : reply.getContent());
         replyToVO.setSender(userVOMap.get(reply.getSenderId()));
         return replyToVO;

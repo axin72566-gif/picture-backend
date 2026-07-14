@@ -21,6 +21,8 @@ public class NotificationVO implements Serializable {
 
     private Long spaceId;
 
+    private Long conversationId;
+
     private String content;
 
     private Integer isRead;

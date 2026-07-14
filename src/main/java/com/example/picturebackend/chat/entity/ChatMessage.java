@@ -24,7 +24,19 @@ public class ChatMessage implements Serializable {
 
     private Long senderId;
 
+    private String messageType;
+
     private String content;
+
+    private String mediaUrl;
+
+    private Integer mediaWidth;
+
+    private Integer mediaHeight;
+
+    private Long mediaSize;
+
+    private String mediaContentType;
 
     private Long replyToId;
 

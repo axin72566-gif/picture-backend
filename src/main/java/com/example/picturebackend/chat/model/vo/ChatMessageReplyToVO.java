@@ -12,6 +12,8 @@ public class ChatMessageReplyToVO implements Serializable {
 
     private Long id;
 
+    private String messageType;
+
     private String content;
 
     private Boolean deleted;

@@ -9,13 +9,22 @@ public interface NotificationService {
     /**
      * 创建一条站内通知。receiverId 与 senderId 相同时跳过。
      */
-    void create(Long receiverId, Long senderId, String type, Long pictureId, Long commentId, Long spaceId, String content);
+    void create(Long receiverId, Long senderId, String type, Long pictureId, Long commentId,
+                Long spaceId, Long conversationId, String content);
 
     /**
-     * 兼容无 spaceId 的调用。
+     * 兼容无 conversationId 的调用。
+     */
+    default void create(Long receiverId, Long senderId, String type, Long pictureId, Long commentId,
+                        Long spaceId, String content) {
+        create(receiverId, senderId, type, pictureId, commentId, spaceId, null, content);
+    }
+
+    /**
+     * 兼容无 spaceId / conversationId 的调用。
      */
     default void create(Long receiverId, Long senderId, String type, Long pictureId, Long commentId, String content) {
-        create(receiverId, senderId, type, pictureId, commentId, null, content);
+        create(receiverId, senderId, type, pictureId, commentId, null, null, content);
     }
 
     IPage<NotificationVO> pageNotifications(Long receiverId, PageRequest request);

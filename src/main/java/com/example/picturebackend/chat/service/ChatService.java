@@ -6,6 +6,8 @@ import com.example.picturebackend.chat.model.dto.ChatReadRequest;
 import com.example.picturebackend.chat.model.vo.ChatMessageVO;
 import com.example.picturebackend.chat.model.vo.ConversationVO;
 import com.example.picturebackend.common.PageRequest;
+import com.example.picturebackend.user.model.vo.UserVO;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 
@@ -20,11 +22,16 @@ public interface ChatService {
      */
     ConversationVO openOrGetDm(Long userId, Long peerUserId);
 
+    List<UserVO> listConversationMembers(Long conversationId, Long userId);
+
     IPage<ChatMessageVO> pageMessages(Long conversationId, Long userId, PageRequest pageRequest);
 
     List<ChatMessageVO> listMessagesSince(Long conversationId, Long userId, Long sinceId, int limit);
 
     ChatMessageVO sendMessage(Long conversationId, ChatMessageAddRequest request, Long userId);
+
+    ChatMessageVO sendImageMessage(Long conversationId, MultipartFile file, String caption, Long replyToId,
+                                   String clientMsgId, List<Long> mentionUserIds, Long userId);
 
     void deleteMessage(Long conversationId, Long messageId, Long operatorId);
 

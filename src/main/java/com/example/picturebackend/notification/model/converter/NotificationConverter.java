@@ -18,6 +18,7 @@ public final class NotificationConverter {
         vo.setPictureId(notification.getPictureId());
         vo.setCommentId(notification.getCommentId());
         vo.setSpaceId(notification.getSpaceId());
+        vo.setConversationId(notification.getConversationId());
         vo.setContent(notification.getContent());
         vo.setIsRead(notification.getIsRead());
         vo.setCreateTime(notification.getCreateTime());

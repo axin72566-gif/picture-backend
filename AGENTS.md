@@ -42,11 +42,11 @@ Auth-required: `POST /api/user/follow/{followedId}`, `DELETE /api/user/follow/{f
 ## Notification
 `notification` table stores in-app notifications (camelCase columns: `id`, `receiverId`, `senderId`, `type`, `pictureId`, `commentId`, `spaceId`, `content`, `isRead`, `createTime`, `isDelete`). See `sql/notification.sql`.
 
-Types: `FOLLOW`（有人关注我）、`COMMENT`（有人评论我的图片）、`REPLY`（有人回复我的评论）、`LIKE`（有人点赞我的图片）、`SPACE_INVITE`（有人邀请我加入空间）。  
+Types: `FOLLOW`（有人关注我）、`COMMENT`（有人评论我的图片）、`REPLY`（有人回复我的评论）、`LIKE`（有人点赞我的图片）、`SPACE_INVITE`（有人邀请我加入空间）、`CHAT_MENTION`（聊天中被 @）。  
 写入规则：不通知自己；回复时若图片作者与父评论作者为同一人，只写一条且优先 `REPLY`。  
-关注成功、发表评论、点赞成功、发起空间邀请后与业务同事务写入；取消关注 / 删除评论 / 取消点赞 / 取消或拒绝邀请不删除历史通知。
+关注成功、发表评论、点赞成功、发起空间邀请、聊天 @ 后与业务同事务写入；取消关注 / 删除评论 / 取消点赞 / 取消或拒绝邀请 / 删除聊天消息不删除历史通知。
 
-`notification` 表含可空 `spaceId`（空间邀请深链）；见 `sql/notification.sql`、`sql/notification_space_id.sql`。
+`notification` 表含可空 `spaceId`、`conversationId`（空间邀请 / 聊天 @ 深链）；见 `sql/notification.sql`、`sql/notification_space_id.sql`、`sql/notification_conversation_id.sql`。
 
 Auth-required: `GET /api/notification/page`, `GET /api/notification/unread/count`, `PUT /api/notification/{id}/read`, `PUT /api/notification/read/all`.  
 Public: `GET /api/picture/{id}`（通知评论/点赞深链打开图片详情；空间图须为成员）。  
@@ -70,18 +70,20 @@ Auth-required: `POST /api/picture/{id}/like`, `DELETE /api/picture/{id}/like`。
 通知类型 `SPACE_INVITE`；`notification.spaceId` 可空，供深链。取消邀请 / 拒绝 / 解散不删历史通知。  
 解散：软删 `space`，物理清成员与 `PENDING` 邀请，软删该空间下图片（不强制清 COS），并拆除对应聊天会话。
 
-### 企业 IM（P1 地基 + P2 私聊）
+### 企业 IM（P1–P3）
 会话模型：`conversation` / `conversation_member` / `chat_message`（见 `sql/conversation.sql` 等；迁移脚本 `sql/migrate_space_chat_to_conversation.sql`）。  
 `SPACE` 会话与空间 1:1；`DM` 私聊一对用户至多一个会话，唯一性由 `conversation_dm_pair`（`sql/conversation_dm_pair.sql`）保证。  
+消息类型 `TEXT` / `IMAGE`（`sql/chat_message_p3.sql`）；聊天图走 COS `chat/...` 前缀，不入库 `picture`。  
+@ 提及：`chat_message_mention` + 通知 `CHAT_MENTION`（`sql/chat_message_mention.sql`）。  
 成员水位 `lastReadMessageId`；未读 = 他人消息且 id > 水位。  
-Auth：`GET /api/chat/conversations`，`GET /api/chat/conversations/by-space/{spaceId}`，`POST /api/chat/conversations/dm`（get-or-create 私聊），`GET|POST /api/chat/conversations/{id}/messages`（支持 `sinceId`），`PUT .../read`，`DELETE .../messages/{messageId}`。  
+Auth：`GET /api/chat/conversations`，`GET /api/chat/conversations/by-space/{spaceId}`，`POST /api/chat/conversations/dm`，`GET /api/chat/conversations/{id}/members`，`GET|POST /api/chat/conversations/{id}/messages`（支持 `sinceId`），`POST .../messages/image`，`PUT .../read`，`DELETE .../messages/{messageId}`。  
 `ConversationVO`：SPACE 含 `spaceId`/`spaceName`/`title`；DM 含 `peer`/`title`。DM 删消息仅本人；SPACE CREATOR 可删他人。  
 旧 `/api/space/{id}/messages*` 委托到 ChatService。  
 实时：登录后全局 STOMP `/ws?token=`，订阅 `/user/queue/chat`；Redis channel `chat.events` 跨实例扇出。事件：`MESSAGE_NEW` / `MESSAGE_DELETED` / `CONVERSATION_UPDATED` / `CONVERSATION_REMOVED`。  
-发送支持 `clientMsgId` 幂等。详见 `plan/chat_im_p1.md`、`plan/chat_im_p2.md`。
+发送支持 `clientMsgId` 幂等。详见 `plan/chat_im_p1.md`、`plan/chat_im_p2.md`、`plan/chat_im_p3.md`。
 
 ### 空间群聊
-空间详情「群聊」Tab 与 `/messages` 共用会话能力；切 Tab **不断**全局 WS。VIEWER+ 可读可发；CREATOR 可删任意。私聊入口：用户资料页「发消息」、空间成员「私聊」。
+空间详情「群聊」Tab 与 `/messages` 共用会话能力；切 Tab **不断**全局 WS。VIEWER+ 可读可发；CREATOR 可删任意。私聊入口：用户资料页「发消息」、空间成员「私聊」。支持发图与 @ 成员。
 
 ### 图片与角色权限
 `picture.spaceId` 可空：`NULL` = 个人图；非空 = 空间图。见 `sql/picture.sql`、`sql/picture_space_id.sql`。

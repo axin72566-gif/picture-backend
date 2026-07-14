@@ -1,10 +1,9 @@
-package com.example.picturebackend.notification.entity;
+package com.example.picturebackend.chat.entity;
 
 import com.baomidou.mybatisplus.annotation.FieldFill;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
-import com.baomidou.mybatisplus.annotation.TableLogic;
 import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
 
@@ -12,35 +11,18 @@ import java.io.Serializable;
 import java.time.LocalDateTime;
 
 @Data
-@TableName("notification")
-public class Notification implements Serializable {
+@TableName("chat_message_mention")
+public class ChatMessageMention implements Serializable {
 
     private static final long serialVersionUID = 1L;
 
     @TableId(type = IdType.AUTO)
     private Long id;
 
-    private Long receiverId;
+    private Long messageId;
 
-    private Long senderId;
-
-    private String type;
-
-    private Long pictureId;
-
-    private Long commentId;
-
-    private Long spaceId;
-
-    private Long conversationId;
-
-    private String content;
-
-    private Integer isRead;
+    private Long userId;
 
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createTime;
-
-    @TableLogic
-    private Integer isDelete;
 }

@@ -13,6 +13,7 @@ import com.example.picturebackend.common.PageRequest;
 import com.example.picturebackend.common.ResultUtils;
 import com.example.picturebackend.constant.UserConstant;
 import com.example.picturebackend.exception.BusinessException;
+import com.example.picturebackend.user.model.vo.UserVO;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -23,8 +24,11 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.util.Arrays;
 import java.util.List;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/chat")
@@ -58,6 +62,13 @@ public class ChatController {
         return ResultUtils.success(chatService.openOrGetDm(userId, peerUserId));
     }
 
+    @GetMapping("/conversations/{id:\\d+}/members")
+    public BaseResponse<List<UserVO>> listMembers(@PathVariable Long id,
+                                                  HttpServletRequest httpRequest) {
+        Long userId = requireLoginUserId(httpRequest);
+        return ResultUtils.success(chatService.listConversationMembers(id, userId));
+    }
+
     @GetMapping("/conversations/{id:\\d+}/messages")
     public BaseResponse<?> pageOrSinceMessages(@PathVariable Long id,
                                                PageRequest pageRequest,
@@ -78,6 +89,22 @@ public class ChatController {
                                                    HttpServletRequest httpRequest) {
         Long userId = requireLoginUserId(httpRequest);
         return ResultUtils.success(chatService.sendMessage(id, request, userId));
+    }
+
+    @PostMapping("/conversations/{id:\\d+}/messages/image")
+    public BaseResponse<ChatMessageVO> sendImageMessage(@PathVariable Long id,
+                                                        @RequestParam("file") MultipartFile file,
+                                                        @RequestParam(required = false) String caption,
+                                                        @RequestParam(required = false) Long replyToId,
+                                                        @RequestParam(required = false) String clientMsgId,
+                                                        @RequestParam(required = false) Long[] mentionUserIds,
+                                                        HttpServletRequest httpRequest) {
+        Long userId = requireLoginUserId(httpRequest);
+        List<Long> mentions = mentionUserIds == null
+                ? null
+                : Arrays.stream(mentionUserIds).filter(uid -> uid != null && uid > 0).collect(Collectors.toList());
+        return ResultUtils.success(chatService.sendImageMessage(
+                id, file, caption, replyToId, clientMsgId, mentions, userId));
     }
 
     @DeleteMapping("/conversations/{id:\\d+}/messages/{messageId:\\d+}")
