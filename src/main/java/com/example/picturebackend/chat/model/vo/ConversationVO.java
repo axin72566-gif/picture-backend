@@ -1,5 +1,6 @@
 package com.example.picturebackend.chat.model.vo;
 
+import com.example.picturebackend.user.model.vo.UserVO;
 import lombok.Data;
 
 import java.io.Serializable;
@@ -17,6 +18,12 @@ public class ConversationVO implements Serializable {
     private Long spaceId;
 
     private String spaceName;
+
+    /** DM 对方用户；SPACE 时为 null */
+    private UserVO peer;
+
+    /** 展示标题：空间名或对方昵称 */
+    private String title;
 
     private Long unreadCount;
 

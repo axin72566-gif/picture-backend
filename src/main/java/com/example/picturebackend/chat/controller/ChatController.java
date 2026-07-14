@@ -3,6 +3,7 @@ package com.example.picturebackend.chat.controller;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.example.picturebackend.chat.model.dto.ChatMessageAddRequest;
 import com.example.picturebackend.chat.model.dto.ChatReadRequest;
+import com.example.picturebackend.chat.model.dto.DmOpenRequest;
 import com.example.picturebackend.chat.model.vo.ChatMessageVO;
 import com.example.picturebackend.chat.model.vo.ConversationVO;
 import com.example.picturebackend.chat.service.ChatService;
@@ -47,6 +48,14 @@ public class ChatController {
                                                    HttpServletRequest httpRequest) {
         Long userId = requireLoginUserId(httpRequest);
         return ResultUtils.success(chatService.getSpaceConversation(spaceId, userId));
+    }
+
+    @PostMapping("/conversations/dm")
+    public BaseResponse<ConversationVO> openOrGetDm(@RequestBody DmOpenRequest request,
+                                                    HttpServletRequest httpRequest) {
+        Long userId = requireLoginUserId(httpRequest);
+        Long peerUserId = request != null ? request.getPeerUserId() : null;
+        return ResultUtils.success(chatService.openOrGetDm(userId, peerUserId));
     }
 
     @GetMapping("/conversations/{id:\\d+}/messages")

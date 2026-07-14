@@ -19,6 +19,7 @@ import com.example.picturebackend.chat.model.vo.ChatMessageReplyToVO;
 import com.example.picturebackend.chat.model.vo.ChatMessageVO;
 import com.example.picturebackend.chat.model.vo.ConversationVO;
 import com.example.picturebackend.chat.service.ChatService;
+import com.example.picturebackend.chat.service.ConversationLifecycleService;
 import com.example.picturebackend.common.ErrorCode;
 import com.example.picturebackend.common.PageRequest;
 import com.example.picturebackend.exception.BusinessException;
@@ -64,6 +65,8 @@ public class ChatServiceImpl implements ChatService {
 
     private final SpaceService spaceService;
 
+    private final ConversationLifecycleService conversationLifecycleService;
+
     private final ChatEventPublisher chatEventPublisher;
 
     public ChatServiceImpl(ConversationMapper conversationMapper,
@@ -72,6 +75,7 @@ public class ChatServiceImpl implements ChatService {
                            SpaceMapper spaceMapper,
                            UserMapper userMapper,
                            SpaceService spaceService,
+                           ConversationLifecycleService conversationLifecycleService,
                            ChatEventPublisher chatEventPublisher) {
         this.conversationMapper = conversationMapper;
         this.conversationMemberMapper = conversationMemberMapper;
@@ -79,6 +83,7 @@ public class ChatServiceImpl implements ChatService {
         this.spaceMapper = spaceMapper;
         this.userMapper = userMapper;
         this.spaceService = spaceService;
+        this.conversationLifecycleService = conversationLifecycleService;
         this.chatEventPublisher = chatEventPublisher;
     }
 
@@ -119,10 +124,12 @@ public class ChatServiceImpl implements ChatService {
         Map<Long, ConversationMember> memberMap = members.stream()
                 .collect(Collectors.toMap(ConversationMember::getConversationId, Function.identity(), (a, b) -> a));
 
+        Map<Long, UserVO> peerMap = loadDmPeerMap(conversationMap.values(), userId);
+
         List<ConversationVO> vos = conversationIds.stream()
                 .map(conversationMap::get)
                 .filter(Objects::nonNull)
-                .map(c -> toConversationVO(c, memberMap.get(c.getId()), spaceMap, userId))
+                .map(c -> toConversationVO(c, memberMap.get(c.getId()), spaceMap, peerMap, userId))
                 .sorted((a, b) -> {
                     var ta = a.getLastMessage() != null ? a.getLastMessage().getCreateTime() : a.getUpdateTime();
                     var tb = b.getLastMessage() != null ? b.getLastMessage().getCreateTime() : b.getUpdateTime();
@@ -142,7 +149,26 @@ public class ChatServiceImpl implements ChatService {
         Conversation conversation = requireSpaceConversationEntity(spaceId);
         ConversationMember member = requireMember(conversation.getId(), userId);
         Map<Long, Space> spaceMap = Map.of(spaceId, spaceService.requireSpace(spaceId));
-        return toConversationVO(conversation, member, spaceMap, userId);
+        return toConversationVO(conversation, member, spaceMap, Collections.emptyMap(), userId);
+    }
+
+    @Override
+    @Transactional
+    public ConversationVO openOrGetDm(Long userId, Long peerUserId) {
+        ConversationLifecycleService.DmOpenResult result =
+                conversationLifecycleService.openOrGetDm(userId, peerUserId);
+        Conversation conversation = result.conversation();
+        ConversationMember member = requireMember(conversation.getId(), userId);
+        Map<Long, UserVO> peerMap = loadDmPeerMap(List.of(conversation), userId);
+        ConversationVO vo = toConversationVO(conversation, member, Collections.emptyMap(), peerMap, userId);
+        if (result.created()) {
+            // 双方列表刷新（创建者也推，便于多端同步）
+            chatEventPublisher.publish(ChatEvent.conversationUpdated(
+                    conversation.getId(), vo.getUnreadCount(), vo.getLastMessage(), userId));
+            chatEventPublisher.publish(ChatEvent.conversationUpdated(
+                    conversation.getId(), 0L, null, peerUserId));
+        }
+        return vo;
     }
 
     @Override
@@ -269,15 +295,22 @@ public class ChatServiceImpl implements ChatService {
         }
 
         boolean isAuthor = Objects.equals(message.getSenderId(), operatorId);
-        boolean isCreator = false;
         Conversation conversation = conversationMapper.selectById(conversationId);
-        if (conversation != null && ConversationType.SPACE.equals(conversation.getType())
-                && conversation.getSpaceId() != null) {
-            SpaceMember spaceMember = spaceService.requireMember(conversation.getSpaceId(), operatorId);
-            isCreator = SpaceRole.CREATOR.equals(spaceMember.getRole());
-        }
-        if (!isAuthor && !isCreator) {
-            throw new BusinessException(ErrorCode.NO_AUTH, "只能删除自己的消息或由创建者删除");
+        if (conversation != null && ConversationType.DM.equals(conversation.getType())) {
+            // 私聊仅本人可删
+            if (!isAuthor) {
+                throw new BusinessException(ErrorCode.NO_AUTH, "只能删除自己的消息");
+            }
+        } else {
+            boolean isCreator = false;
+            if (conversation != null && ConversationType.SPACE.equals(conversation.getType())
+                    && conversation.getSpaceId() != null) {
+                SpaceMember spaceMember = spaceService.requireMember(conversation.getSpaceId(), operatorId);
+                isCreator = SpaceRole.CREATOR.equals(spaceMember.getRole());
+            }
+            if (!isAuthor && !isCreator) {
+                throw new BusinessException(ErrorCode.NO_AUTH, "只能删除自己的消息或由创建者删除");
+            }
         }
 
         int rows = chatMessageMapper.deleteById(messageId);
@@ -319,16 +352,25 @@ public class ChatServiceImpl implements ChatService {
     private ConversationVO toConversationVO(Conversation conversation,
                                             ConversationMember member,
                                             Map<Long, Space> spaceMap,
+                                            Map<Long, UserVO> peerMap,
                                             Long userId) {
         ConversationVO vo = new ConversationVO();
         vo.setId(conversation.getId());
         vo.setType(conversation.getType());
         vo.setSpaceId(conversation.getSpaceId());
         vo.setUpdateTime(conversation.getUpdateTime());
-        if (conversation.getSpaceId() != null) {
+        if (ConversationType.SPACE.equals(conversation.getType()) && conversation.getSpaceId() != null) {
             Space space = spaceMap.get(conversation.getSpaceId());
             if (space != null) {
                 vo.setSpaceName(space.getName());
+                vo.setTitle(space.getName());
+            }
+        } else if (ConversationType.DM.equals(conversation.getType())) {
+            UserVO peer = peerMap != null ? peerMap.get(conversation.getId()) : null;
+            vo.setPeer(peer);
+            if (peer != null) {
+                String name = StringUtils.hasText(peer.getUserName()) ? peer.getUserName() : peer.getUserAccount();
+                vo.setTitle(name);
             }
         }
         long lastRead = member != null && member.getLastReadMessageId() != null
@@ -344,6 +386,44 @@ public class ChatServiceImpl implements ChatService {
             vo.setLastMessage(list.isEmpty() ? null : list.getFirst());
         }
         return vo;
+    }
+
+    /**
+     * 批量解析 DM 会话的对方用户（conversationId -> peer UserVO）。
+     */
+    private Map<Long, UserVO> loadDmPeerMap(java.util.Collection<Conversation> conversations, Long userId) {
+        if (conversations == null || conversations.isEmpty() || userId == null) {
+            return Collections.emptyMap();
+        }
+        List<Long> dmIds = conversations.stream()
+                .filter(c -> c != null && ConversationType.DM.equals(c.getType()))
+                .map(Conversation::getId)
+                .filter(Objects::nonNull)
+                .toList();
+        if (dmIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        List<ConversationMember> dmMembers = conversationMemberMapper.selectList(
+                new LambdaQueryWrapper<ConversationMember>()
+                        .in(ConversationMember::getConversationId, dmIds));
+        Map<Long, Long> conversationPeerId = new java.util.HashMap<>();
+        for (ConversationMember m : dmMembers) {
+            if (m.getUserId() != null && !Objects.equals(m.getUserId(), userId)) {
+                conversationPeerId.put(m.getConversationId(), m.getUserId());
+            }
+        }
+        if (conversationPeerId.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        Map<Long, UserVO> users = loadUserVOMap(new HashSet<>(conversationPeerId.values()));
+        Map<Long, UserVO> result = new java.util.HashMap<>();
+        conversationPeerId.forEach((cid, peerId) -> {
+            UserVO peer = users.get(peerId);
+            if (peer != null) {
+                result.put(cid, peer);
+            }
+        });
+        return result;
     }
 
     private ConversationMember requireMember(Long conversationId, Long userId) {

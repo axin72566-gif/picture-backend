@@ -15,6 +15,11 @@ public interface ChatService {
 
     ConversationVO getSpaceConversation(Long spaceId, Long userId);
 
+    /**
+     * 获取或创建与对方的私聊会话。
+     */
+    ConversationVO openOrGetDm(Long userId, Long peerUserId);
+
     IPage<ChatMessageVO> pageMessages(Long conversationId, Long userId, PageRequest pageRequest);
 
     List<ChatMessageVO> listMessagesSince(Long conversationId, Long userId, Long sinceId, int limit);
