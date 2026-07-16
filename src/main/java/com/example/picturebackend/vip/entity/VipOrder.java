@@ -1,4 +1,4 @@
-package com.example.picturebackend.user.entity;
+package com.example.picturebackend.vip.entity;
 
 import com.baomidou.mybatisplus.annotation.FieldFill;
 import com.baomidou.mybatisplus.annotation.IdType;
@@ -12,27 +12,35 @@ import java.io.Serializable;
 import java.time.LocalDateTime;
 
 @Data
-@TableName("user")
-public class User implements Serializable {
+@TableName("vip_order")
+public class VipOrder implements Serializable {
 
     private static final long serialVersionUID = 1L;
 
     @TableId(type = IdType.AUTO)
     private Long id;
 
-    private String userAccount;
+    private String orderNo;
 
-    private String userPassword;
+    private Long userId;
 
-    private String userName;
+    private Long planId;
 
-    private String userAvatar;
+    private Integer durationDays;
 
-    private String userProfile;
+    private Integer originalAmountCents;
 
-    private String userRole;
+    private Integer discountCents;
 
-    private LocalDateTime vipExpireTime;
+    private Long couponId;
+
+    private Integer amountCents;
+
+    private String status;
+
+    private LocalDateTime expireTime;
+
+    private LocalDateTime paidTime;
 
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createTime;

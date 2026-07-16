@@ -70,6 +70,20 @@ Auth-required: `POST /api/picture/{id}/like`, `DELETE /api/picture/{id}/like`。
 通知类型 `SPACE_INVITE`；`notification.spaceId` 可空，供深链。取消邀请 / 拒绝 / 解散不删历史通知。  
 解散：软删 `space`，物理清成员与 `PENDING` 邀请，软删该空间下图片（不强制清 COS），并拆除对应聊天会话。
 
+### VIP（团队空间额度）
+`user.vipExpireTime` 表示 VIP 到期时间；有效期内提升可创建空间数与单空间成员上限（与 `userRole` 正交）。见 `sql/user_vip.sql`、`sql/vip_plan.sql`、`sql/vip_order.sql`，`plan/vip.md`。  
+额度默认：免费 1 空间 / 5 成员；VIP 5 空间 / 50 成员。成员上限看空间 CREATOR。邀请占用 PENDING 名额。过期不强制缩减已有空间。  
+下单后 15 分钟内须支付；超时 `EXPIRED`（惰性刷新）。支付为模拟接口，后续可换真实渠道。  
+Auth：`GET /api/vip/plans`，`GET /api/vip/status`，`POST /api/vip/orders`，`POST /api/vip/orders/{orderNo}/mock-pay|cancel`，`GET /api/vip/orders`。  
+`UserVO` 含 `vipExpireTime`、`vipActive`。创建空间 / 邀请 / 接受邀请超限分别返回 `VIP_SPACE_QUOTA_EXCEEDED` / `VIP_MEMBER_QUOTA_EXCEEDED`。  
+下单可选 `couponId` 固定金额抵扣；订单含 `originalAmountCents` / `discountCents` / `couponId`。
+
+### 优惠券秒杀（抵扣 VIP）
+`coupon_activity` / `user_coupon`；固定金额券经 Redis Lua 秒杀领取，用于 VIP 下单。见 `sql/coupon_activity.sql`、`sql/user_coupon.sql`、`sql/vip_order_coupon.sql`，`plan/coupon_seckill.md`。  
+每用户每活动限领 1 张；用券时 `UNUSED→LOCKED→USED`，订单取消/过期解锁。券与活动窗口惰性过期。  
+Auth：`GET /api/coupon/activities`，`GET /api/coupon/activities/{id}`，`POST /api/coupon/activities/{id}/claim`，`GET /api/coupon/mine`。  
+Admin：`GET|POST /api/admin/coupon/activities`，`PUT /api/admin/coupon/activities/{id}`。
+
 ### 企业 IM（P1–P4，路线图完结）
 会话模型：`conversation` / `conversation_member` / `chat_message`（见 `sql/conversation.sql` 等；迁移脚本 `sql/migrate_space_chat_to_conversation.sql`）。  
 `SPACE` 会话与空间 1:1；`DM` 私聊一对用户至多一个会话，唯一性由 `conversation_dm_pair`（`sql/conversation_dm_pair.sql`）保证。  
@@ -109,6 +123,8 @@ Auth-required（均需登录）：
 `GET /api/space/{id}/pictures`，`GET|POST /api/space/{id}/messages`，`DELETE /api/space/{id}/messages/{messageId}`，  
 `GET|POST /api/chat/conversations/**`，`PUT /api/chat/conversations/{id}/read`，  
 `GET|POST|PUT|DELETE /api/admin/sensitive-words/**`，`GET /api/admin/chat/moderation-logs`，  
+`GET|POST /api/admin/coupon/activities`，`PUT /api/admin/coupon/activities/{id}`，  
+`GET|POST /api/vip/**`，`GET|POST /api/coupon/**`，  
 `GET /api/space/{id}/members`，`PUT /api/space/{id}/members/{userId}/role`，`DELETE /api/space/{id}/members/{userId}`，`DELETE /api/space/{id}/members/me`，  
 `POST|GET /api/space/{id}/invites`，`GET /api/space/invites/pending`，  
 `POST /api/space/invites/{inviteId}/accept|reject`，`DELETE /api/space/invites/{inviteId}`。

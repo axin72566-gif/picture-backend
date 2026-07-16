@@ -25,6 +25,7 @@ import com.example.picturebackend.user.entity.User;
 import com.example.picturebackend.user.mapper.UserMapper;
 import com.example.picturebackend.user.model.converter.UserConverter;
 import com.example.picturebackend.user.model.vo.UserVO;
+import com.example.picturebackend.vip.service.VipQuotaService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -55,13 +56,16 @@ public class SpaceInviteServiceImpl implements SpaceInviteService {
 
     private final ConversationLifecycleService conversationLifecycleService;
 
+    private final VipQuotaService vipQuotaService;
+
     public SpaceInviteServiceImpl(SpaceInviteMapper spaceInviteMapper,
                                   SpaceMemberMapper spaceMemberMapper,
                                   SpaceMapper spaceMapper,
                                   UserMapper userMapper,
                                   SpaceService spaceService,
                                   NotificationService notificationService,
-                                  ConversationLifecycleService conversationLifecycleService) {
+                                  ConversationLifecycleService conversationLifecycleService,
+                                  VipQuotaService vipQuotaService) {
         this.spaceInviteMapper = spaceInviteMapper;
         this.spaceMemberMapper = spaceMemberMapper;
         this.spaceMapper = spaceMapper;
@@ -69,6 +73,7 @@ public class SpaceInviteServiceImpl implements SpaceInviteService {
         this.spaceService = spaceService;
         this.notificationService = notificationService;
         this.conversationLifecycleService = conversationLifecycleService;
+        this.vipQuotaService = vipQuotaService;
     }
 
     @Override
@@ -99,6 +104,8 @@ public class SpaceInviteServiceImpl implements SpaceInviteService {
         if (pendingCount != null && pendingCount > 0) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR, "已有待处理邀请");
         }
+
+        vipQuotaService.requireCanInviteMember(spaceId);
 
         SpaceInvite invite = new SpaceInvite();
         invite.setSpaceId(spaceId);
@@ -163,6 +170,8 @@ public class SpaceInviteServiceImpl implements SpaceInviteService {
             spaceInviteMapper.updateById(invite);
             return;
         }
+
+        vipQuotaService.requireCanAcceptMember(invite.getSpaceId());
 
         SpaceMember member = new SpaceMember();
         member.setSpaceId(invite.getSpaceId());

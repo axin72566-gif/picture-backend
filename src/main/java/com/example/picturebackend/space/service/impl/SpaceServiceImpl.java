@@ -20,6 +20,7 @@ import com.example.picturebackend.space.model.dto.SpaceCreateRequest;
 import com.example.picturebackend.space.model.dto.SpaceUpdateRequest;
 import com.example.picturebackend.space.model.vo.SpaceVO;
 import com.example.picturebackend.space.service.SpaceService;
+import com.example.picturebackend.vip.service.VipQuotaService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -48,16 +49,20 @@ public class SpaceServiceImpl implements SpaceService {
 
     private final ConversationLifecycleService conversationLifecycleService;
 
+    private final VipQuotaService vipQuotaService;
+
     public SpaceServiceImpl(SpaceMapper spaceMapper,
                             SpaceMemberMapper spaceMemberMapper,
                             SpaceInviteMapper spaceInviteMapper,
                             PictureMapper pictureMapper,
-                            ConversationLifecycleService conversationLifecycleService) {
+                            ConversationLifecycleService conversationLifecycleService,
+                            VipQuotaService vipQuotaService) {
         this.spaceMapper = spaceMapper;
         this.spaceMemberMapper = spaceMemberMapper;
         this.spaceInviteMapper = spaceInviteMapper;
         this.pictureMapper = pictureMapper;
         this.conversationLifecycleService = conversationLifecycleService;
+        this.vipQuotaService = vipQuotaService;
     }
 
     @Override
@@ -74,6 +79,8 @@ public class SpaceServiceImpl implements SpaceService {
             throw new BusinessException(ErrorCode.PARAMS_ERROR, "空间名称过长");
         }
         String description = normalizeDescription(request.getDescription());
+
+        vipQuotaService.requireCanCreateSpace(ownerId);
 
         Space space = new Space();
         space.setName(name);

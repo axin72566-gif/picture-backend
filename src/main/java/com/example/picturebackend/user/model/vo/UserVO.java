@@ -29,4 +29,8 @@ public class UserVO implements Serializable {
     private Long followerCount;
 
     private Long followingCount;
+
+    private LocalDateTime vipExpireTime;
+
+    private Boolean vipActive;
 }

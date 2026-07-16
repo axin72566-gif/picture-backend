@@ -15,6 +15,7 @@ CREATE TABLE `user` (
     `userAvatar`  VARCHAR(255)          DEFAULT NULL COMMENT '头像 URL',
     `userProfile` VARCHAR(255)          DEFAULT NULL COMMENT '个人简介',
     `userRole`    VARCHAR(16)  NOT NULL DEFAULT 'user' COMMENT '角色: user / admin',
+    `vipExpireTime` DATETIME            DEFAULT NULL COMMENT 'VIP 到期时间，NULL=从未开通',
     `createTime`  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     `updateTime`  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     `isDelete`    TINYINT      NOT NULL DEFAULT 0 COMMENT '逻辑删除 0-未删 1-已删',

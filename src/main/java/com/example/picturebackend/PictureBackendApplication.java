@@ -12,7 +12,9 @@ import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
         "com.example.picturebackend.picture.mapper",
         "com.example.picturebackend.notification.mapper",
         "com.example.picturebackend.space.mapper",
-        "com.example.picturebackend.chat.mapper"
+        "com.example.picturebackend.chat.mapper",
+        "com.example.picturebackend.vip.mapper",
+        "com.example.picturebackend.coupon.mapper"
 })
 public class PictureBackendApplication {
 
